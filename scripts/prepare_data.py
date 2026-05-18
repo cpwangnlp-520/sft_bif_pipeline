@@ -7,7 +7,7 @@ import argparse
 import random
 
 
-def prepare_gsm8k(output_dir: str = "data", num_train: int = 4000, num_val: int = 500, seed: int = 42) -> None:
+def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, num_val: int = 500, seed: int = 42) -> None:
     from datasets import load_dataset
 
     ds = load_dataset("openai/gsm8k", "main")
@@ -126,7 +126,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="data")
     parser.add_argument("--dataset", type=str, default="all",
                         choices=["all", "gsm8k", "nq", "coding", "factqa"])
-    parser.add_argument("--num_train", type=int, default=4000, help="GSM8K train samples")
+    parser.add_argument("--num_train", type=int, default=3500, help="GSM8K train samples")
     parser.add_argument("--num_val", type=int, default=500, help="GSM8K val samples")
     parser.add_argument("--num_eval", type=int, default=500, help="Eval samples per domain")
     parser.add_argument("--seed", type=int, default=42)
