@@ -9,7 +9,12 @@ runs/
 *.safetensors
 *.bin
 *.arrow
-data/
+data/*
+!data/gsm8k_sft_train.jsonl
+!data/gsm8k_val.jsonl
+!data/nq_eval.jsonl
+!data/factqa_eval.jsonl
+!data/coding_eval.jsonl
 !data/.gitkeep
 .swanlab/
 third_party/BIF/runs/
