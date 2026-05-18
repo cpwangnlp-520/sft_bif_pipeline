@@ -7,7 +7,19 @@ import argparse
 import random
 
 
+def _skip_if_exists(*paths: str) -> bool:
+    if all(os.path.exists(p) for p in paths):
+        print(f"  skip (already exists): {', '.join(os.path.basename(p) for p in paths)}")
+        return True
+    return False
+
+
 def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, num_val: int = 500, seed: int = 42) -> None:
+    train_path = os.path.join(output_dir, "gsm8k_sft_train.jsonl")
+    val_path = os.path.join(output_dir, "gsm8k_val.jsonl")
+    if _skip_if_exists(train_path, val_path):
+        return
+
     from datasets import load_dataset
 
     ds = load_dataset("openai/gsm8k", "main")
@@ -19,7 +31,6 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, num_val: int 
     train_items = all_items[:num_train]
     val_items = all_items[num_train:num_train + num_val]
 
-    train_path = os.path.join(output_dir, "gsm8k_sft_train.jsonl")
     with open(train_path, "w", encoding="utf-8") as f:
         for idx, item in enumerate(train_items):
             messages = [
@@ -41,6 +52,10 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, num_val: int 
 
 
 def prepare_nq(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "nq_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
     from datasets import load_dataset
 
     ds = load_dataset("google-research-datasets/nq_open", split="validation")
@@ -50,7 +65,6 @@ def prepare_nq(output_dir: str = "data", num_eval: int = 500, seed: int = 42) ->
     rng.shuffle(items)
     items = items[:num_eval]
 
-    eval_path = os.path.join(output_dir, "nq_eval.jsonl")
     with open(eval_path, "w", encoding="utf-8") as f:
         for item in items:
             answers = item["answer"]
@@ -68,6 +82,10 @@ def prepare_nq(output_dir: str = "data", num_eval: int = 500, seed: int = 42) ->
 
 
 def prepare_coding(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "coding_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
     from datasets import load_dataset
 
     ds = load_dataset("google-research-datasets/mbpp", split="test")
@@ -77,7 +95,6 @@ def prepare_coding(output_dir: str = "data", num_eval: int = 500, seed: int = 42
     rng.shuffle(items)
     items = items[:num_eval]
 
-    eval_path = os.path.join(output_dir, "coding_eval.jsonl")
     with open(eval_path, "w", encoding="utf-8") as f:
         for item in items:
             prompt = item["text"]
@@ -92,6 +109,10 @@ def prepare_coding(output_dir: str = "data", num_eval: int = 500, seed: int = 42
 
 
 def prepare_factqa(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "factqa_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
     from datasets import load_dataset
 
     ds = load_dataset("truthfulqa/truthful_qa", "multiple_choice", split="validation")
@@ -101,7 +122,6 @@ def prepare_factqa(output_dir: str = "data", num_eval: int = 500, seed: int = 42
     rng.shuffle(items)
     items = items[:num_eval]
 
-    eval_path = os.path.join(output_dir, "factqa_eval.jsonl")
     with open(eval_path, "w", encoding="utf-8") as f:
         for item in items:
             question = item["question"]

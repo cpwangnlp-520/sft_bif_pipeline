@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import yaml
+
+
+def _short_model_name(path: str) -> str:
+    base = os.path.basename(os.path.normpath(path))
+    return base.replace("-", "_").replace(".", "")
 
 
 @dataclass
@@ -11,6 +17,7 @@ class TrainConfig:
     model_name_or_path: str = ""
 
     num_train_epochs: int = 10
+    max_steps: int = -1
     per_device_train_batch_size: int = 4
     gradient_accumulation_steps: int = 32
     learning_rate: float = 5e-5
@@ -50,20 +57,39 @@ class TrainConfig:
         return asdict(self)
 
     @property
+    def auto_name(self) -> str:
+        model = _short_model_name(self.model_name_or_path)
+        lr_val = self.learning_rate
+        if lr_val >= 1:
+            lr_str = f"{lr_val:.0f}"
+        else:
+            exp = 0
+            v = lr_val
+            while v < 1:
+                v *= 10
+                exp += 1
+            lr_str = f"{v:.0f}em{exp:02d}"
+        return f"{model}_ep{self.num_train_epochs}_bs{self.per_device_train_batch_size}_lr{lr_str}"
+
+    @property
     def output_dir(self) -> str:
-        return f"{self.output_root}/{self.experiment_name}"
+        name = self.experiment_name or self.auto_name
+        return f"{self.output_root}/{name}"
 
     @property
     def swanlab_run_sft_full(self) -> str:
-        return f"{self.experiment_name}_sft_full"
+        name = self.experiment_name or self.auto_name
+        return f"{name}_sft_full"
 
     @property
     def swanlab_run_sft_filtered(self) -> str:
-        return f"{self.experiment_name}_sft_filtered"
+        name = self.experiment_name or self.auto_name
+        return f"{name}_sft_filtered"
 
     @property
     def swanlab_run_bif(self) -> str:
-        return f"{self.experiment_name}_bif_sweep"
+        name = self.experiment_name or self.auto_name
+        return f"{name}_bif_sweep"
 
 
 @dataclass
