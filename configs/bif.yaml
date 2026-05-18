@@ -16,6 +16,6 @@ dtype: bfloat16
 
 score_col: cross_corr_mean_over_queries
 
-sweep_lr_values: [1.0e-4]
-sweep_gamma_values: [100.0, 1000.0]
-sweep_nbeta_values: [100.0]
+sweep_lr_values: [1.0e-4, 1.0e-5]
+sweep_gamma_values: [10.0, 100.0, 1000.0]
+sweep_nbeta_values: [10.0, 100.0, 1000.0]
