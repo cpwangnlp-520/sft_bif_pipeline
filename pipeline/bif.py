@@ -21,6 +21,7 @@ def generate_bif_configs(
 
     base_run = {
         "model_root": sft_output_dir,
+        "run_all_checkpoints": True,
         "base_model_path": train_config.model_name_or_path,
         "tokenizer_path": train_config.model_name_or_path,
         "pool_jsonl": pool_jsonl,

@@ -94,6 +94,12 @@ def run_sft(
     trainer.train()
     trainer.save_model()
     tokenizer.save_pretrained(output_dir)
+
+    final_model_link = os.path.join(os.path.dirname(output_dir), "final_model")
+    if not os.path.exists(final_model_link):
+        os.symlink(output_dir, final_model_link)
+        print(f"[train] final_model symlink -> {output_dir}")
+
     print(f"[train] model saved to {output_dir}")
 
-    return output_dir
+    return os.path.dirname(output_dir)
