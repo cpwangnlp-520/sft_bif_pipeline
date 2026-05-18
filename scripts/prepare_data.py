@@ -11,11 +11,13 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 4000, num_val: int 
     from datasets import load_dataset
 
     ds = load_dataset("openai/gsm8k", "main")
-    train_items = list(ds["train"])
+    all_items = list(ds["train"])
 
     rng = random.Random(seed)
-    rng.shuffle(train_items)
-    train_items = train_items[:num_train]
+    rng.shuffle(all_items)
+
+    train_items = all_items[:num_train]
+    val_items = all_items[num_train:num_train + num_val]
 
     train_path = os.path.join(output_dir, "gsm8k_sft_train.jsonl")
     with open(train_path, "w", encoding="utf-8") as f:
@@ -26,11 +28,6 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 4000, num_val: int 
             ]
             f.write(json.dumps({"id": str(idx), "messages": messages}, ensure_ascii=False) + "\n")
 
-    val_items = list(ds["test"])
-    rng2 = random.Random(seed)
-    rng2.shuffle(val_items)
-    val_items = val_items[:num_val]
-
     val_path = os.path.join(output_dir, "gsm8k_val.jsonl")
     with open(val_path, "w", encoding="utf-8") as f:
         for item in val_items:
@@ -40,7 +37,7 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 4000, num_val: int 
             ]
             f.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
 
-    print(f"gsm8k: {len(train_items)} train, {len(val_items)} val (seed={seed})")
+    print(f"gsm8k: {len(train_items)} train, {len(val_items)} val (from train split, seed={seed})")
 
 
 def prepare_nq(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
