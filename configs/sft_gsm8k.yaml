@@ -1,4 +1,6 @@
-model_name_or_path: /workspace/pku_percy/models/pythia-70m-step1000
+experiment_name: gsm8k_pythia70m
+
+model_name_or_path: <YOUR_MODEL_PATH>
 
 num_train_epochs: 10
 per_device_train_batch_size: 4
@@ -22,8 +24,9 @@ eval_files:
 cutoff_len: 1024
 preprocessing_num_workers: 8
 
-output_dir: saves/gsm8k_sft
-run_name: sft_full
+output_root: runs
 
 use_swanlab: true
 swanlab_project: sft-bif-pipeline
+
+bottom_k: 500

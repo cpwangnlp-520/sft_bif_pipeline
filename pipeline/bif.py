@@ -4,20 +4,28 @@ import os
 
 import yaml
 
-from .config import BIFConfig
+from .config import BIFConfig, TrainConfig
 
 
-def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
-    """Generate BIF sweep-bif YAML config for base + final_model only."""
-    base_run_config_path = os.path.join(os.path.dirname(output_path), "bif_base_run.yaml")
+def generate_bif_configs(
+    train_config: TrainConfig,
+    bif_config: BIFConfig,
+    sft_output_dir: str,
+    pool_jsonl: str,
+    query_jsonl: str,
+) -> str:
+    """Generate BIF base-run + sweep YAML configs. Returns sweep config path."""
+    bif_dir = os.path.join(train_config.output_dir, "bif_sweep")
+    base_run_path = os.path.join(bif_dir, "base_run.yaml")
+    sweep_path = os.path.join(bif_dir, "sweep.yaml")
 
     base_run = {
-        "model_root": bif_config.model_root,
-        "base_model_path": bif_config.base_model_path,
-        "tokenizer_path": bif_config.tokenizer_path or bif_config.base_model_path,
-        "pool_jsonl": bif_config.pool_jsonl,
-        "query_jsonl": bif_config.query_jsonl,
-        "out_dir": os.path.join(bif_config.out_dir, "traces"),
+        "model_root": sft_output_dir,
+        "base_model_path": train_config.model_name_or_path,
+        "tokenizer_path": train_config.model_name_or_path,
+        "pool_jsonl": pool_jsonl,
+        "query_jsonl": query_jsonl,
+        "out_dir": os.path.join(bif_dir, "traces"),
         "num_chains": bif_config.num_chains,
         "draws_per_chain": bif_config.draws_per_chain,
         "max_length": bif_config.max_length,
@@ -33,17 +41,16 @@ def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
         "sampler_type": bif_config.sampler_type,
         "seed": bif_config.seed,
         "dtype": bif_config.dtype,
+        "experiment_name": train_config.swanlab_run_bif,
     }
 
-    os.makedirs(os.path.dirname(base_run_config_path) or ".", exist_ok=True)
-    with open(base_run_config_path, "w") as f:
+    os.makedirs(bif_dir, exist_ok=True)
+    with open(base_run_path, "w") as f:
         yaml.dump(base_run, f, default_flow_style=False)
 
-    bottom_k = bif_config.bottom_k if bif_config.bottom_k > 0 else 150
-
     sweep_config = {
-        "base_run_config": base_run_config_path,
-        "output_dir": bif_config.out_dir,
+        "base_run_config": base_run_path,
+        "output_dir": bif_dir,
         "run_overrides": {
             "draws_per_chain": bif_config.draws_per_chain,
             "num_chains": bif_config.num_chains,
@@ -63,7 +70,7 @@ def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
         },
         "analysis": {
             "score_col": bif_config.score_col,
-            "top_k": bottom_k,
+            "top_k": train_config.bottom_k,
             "enable_aux_query_plots": False,
             "negate_scores": False,
         },
@@ -74,7 +81,7 @@ def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
                 "enabled": True,
                 "num_splits": 20,
                 "split_fraction": 0.5,
-                "top_k": [bottom_k],
+                "top_k": [train_config.bottom_k],
                 "score_col": bif_config.score_col,
                 "pass_threshold": 0.4,
                 "seed": 42,
@@ -82,7 +89,7 @@ def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
             },
             "chain_stability": {
                 "enabled": True,
-                "top_k": [bottom_k],
+                "top_k": [train_config.bottom_k],
                 "score_col": bif_config.score_col,
                 "min_draws_per_chain": 4,
             },
@@ -98,35 +105,35 @@ def generate_bif_sweep_config(bif_config: BIFConfig, output_path: str) -> str:
         },
     }
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w") as f:
+    with open(sweep_path, "w") as f:
         yaml.dump(sweep_config, f, default_flow_style=False)
 
-    print(f"[bif] sweep config -> {output_path}")
-    print(f"[bif] base run config -> {base_run_config_path}")
-    return output_path
+    print(f"[bif] base_run -> {base_run_path}")
+    print(f"[bif] sweep    -> {sweep_path}")
+    return sweep_path
 
 
-def find_bif_sweep_best_run(sweep_dir: str, score_col: str = "cross_corr_mean_over_queries") -> str:
-    """Find the best sweep run (most stable) from sweep_summary.csv."""
+def find_bif_sweep_best_run(sweep_dir: str) -> str:
+    """Find the first sweep run directory."""
     import csv
 
     summary_path = os.path.join(sweep_dir, "sweep_summary.csv")
-    if not os.path.exists(summary_path):
-        dirs = [d for d in os.listdir(sweep_dir) if d.startswith("grid_")]
+    if os.path.exists(summary_path):
+        with open(summary_path, encoding="utf-8") as f:
+            reader = list(csv.DictReader(f))
+        if reader:
+            run_id = reader[0].get("run_id", reader[0].get("grid_point", ""))
+            candidate = os.path.join(sweep_dir, "runs", run_id)
+            if os.path.exists(candidate):
+                print(f"[bif] best sweep run: {run_id}")
+                return candidate
+
+    runs_dir = os.path.join(sweep_dir, "runs")
+    if os.path.isdir(runs_dir):
+        dirs = sorted([d for d in os.listdir(runs_dir) if d.startswith("grid_")])
         if dirs:
-            return os.path.join(sweep_dir, sorted(dirs)[0])
-        raise FileNotFoundError(f"No sweep results found in {sweep_dir}")
+            best = os.path.join(runs_dir, dirs[0])
+            print(f"[bif] using sweep run: {dirs[0]}")
+            return best
 
-    with open(summary_path, encoding="utf-8") as f:
-        reader = list(csv.DictReader(f))
-
-    if not reader:
-        raise ValueError(f"sweep_summary.csv is empty: {summary_path}")
-
-    best_row = reader[0]
-    run_id = best_row.get("run_id", best_row.get("grid_point", ""))
-    best_dir = os.path.join(sweep_dir, "runs", run_id) if os.path.exists(os.path.join(sweep_dir, "runs", run_id)) else sweep_dir
-
-    print(f"[bif] best sweep run: {run_id} -> {best_dir}")
-    return best_dir
+    raise FileNotFoundError(f"No sweep results found in {sweep_dir}")

@@ -18,7 +18,7 @@ def run_sft(
     num_epochs_override: Optional[float] = None,
 ) -> str:
     train_file = train_file_override or config.train_file
-    run_name = run_name_override or config.run_name
+    run_name = run_name_override or config.swanlab_run_sft_full
     num_epochs = num_epochs_override if num_epochs_override is not None else config.num_train_epochs
     output_dir = os.path.join(config.output_dir, run_name)
 
@@ -95,8 +95,5 @@ def run_sft(
     trainer.save_model()
     tokenizer.save_pretrained(output_dir)
     print(f"[train] model saved to {output_dir}")
-
-    final_dir = os.path.join(output_dir, "final_model")
-    os.symlink(output_dir, final_dir) if not os.path.exists(final_dir) else None
 
     return output_dir

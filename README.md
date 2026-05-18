@@ -1,150 +1,177 @@
 # SFT-BIF Training Pipeline
 
-轻量级 SFT 训练 + BIF 数据筛选 pipeline。
+A lightweight pipeline for SFT training with BIF (Bayesian Influence Function) data filtering.
 
-## 架构
-
-```
-pipeline/
-├── config.py    # 配置 (YAML → dataclass)
-├── data.py      # 数据加载、格式转换、BIF 筛选
-├── train.py     # SFT 训练 (trl.SFTTrainer + SwanLab)
-└── cli.py       # CLI: train / filter / pipeline
-```
-
-## Pipeline 流程
+## Pipeline Flow
 
 ```
-SFT(全量数据) → BIF分析(外部) → 剔除bottom数据 → SFT(筛选后数据) → 对比结果
-     ↓                              ↓
-  model_v1                      model_v2
-  eval: gsm8k/mmlu/factqa/coding  eval: gsm8k/mmlu/factqa/coding
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Prepare Data │────>│  Round 1 SFT │────>│   BIF Sweep  │
+│  (3500 sft)  │     │  (full data) │     │ (base vs     │
+│  (1500 eval) │     │  (10 epochs) │     │  final ckpt) │
+└─────────────┘     └──────────────┘     └──────┬───────┘
+                                                 │
+                                          bottom_ids (lowest influence)
+                                                 │
+                                          ┌──────▼───────┐
+                                          │   Filter     │
+                                          │   bottom_k   │
+                                          └──────┬───────┘
+                                                 │
+                                          ┌──────▼───────┐
+                                          │  Round 2 SFT │
+                                          │ (filtered,   │
+                                          │ token-aligned│
+                                          │  epochs)     │
+                                          └──────────────┘
 ```
 
-## 安装
+**SwanLab** tracks all experiments under one project with clear naming:
+
+| Experiment | SwanLab Name |
+|---|---|
+| Round 1 SFT | `{experiment_name}_sft_full` |
+| BIF sweep | `{experiment_name}_bif_sweep` |
+| Round 2 SFT | `{experiment_name}_sft_filtered` |
+
+## Output Structure
+
+```
+runs/{experiment_name}/
+├── {experiment_name}_sft_full/       # Round 1 model
+├── {experiment_name}_sft_filtered/   # Round 2 model
+├── bif_sweep/                        # BIF sweep results
+│   ├── base_run.yaml                 # Auto-generated base config
+│   ├── sweep.yaml                    # Auto-generated sweep config
+│   ├── traces/                       # BIF trace data
+│   └── runs/                         # Per-grid-point results
+├── bif_pool.jsonl                    # BIF pool data
+└── bif_query.jsonl                   # BIF query data
+```
+
+## Install
 
 ```bash
-cd /workspace/new-preject/train-pipeline
 pip install -e .
+
+# Install BIF submodule
+cd third_party/BIF && pip install -e . && cd ../..
 ```
 
-## 数据格式
-
-训练和评估数据均为 JSONL，支持两种格式：
-
-**格式 1 (推荐): messages 格式**
-```jsonl
-{"id": "gsm8k_0001", "messages": [{"role": "user", "content": "问题"}, {"role": "assistant", "content": "答案"}]}
-```
-
-**格式 2: alpaca 格式**
-```jsonl
-{"instruction": "问题", "input": "", "output": "答案"}
-```
-
-## BIF 结果格式
-
-BIF 工具输出的 JSON 文件，包含需要剔除的 bottom 数据 ID：
-
-```json
-{
-  "bottom_ids": ["gsm8k_0042", "gsm8k_0108", ...],
-  "metadata": {
-    "score_col": "cross_corr_mean_over_queries",
-    "num_bottom": 500
-  }
-}
-```
-
-- `bottom_ids` 中的值对应训练数据中的 `id` 字段
-- 如果训练数据没有 `id` 字段，则使用行索引（0-based 字符串）
-
-## 使用方法
-
-### 1. 准备数据
+## Data Preparation
 
 ```bash
-python scripts/prepare_data.py --output_dir data
+python scripts/prepare_data.py --num_train 3500 --num_eval 500 --seed 42
 ```
 
-下载 GSM8K 和 MMLU，生成标准 JSONL 格式。自定义数据集手动放入 `data/` 目录。
+Downloads and prepares:
 
-### 2. 单次 SFT 训练
+| File | Source | Count | Purpose |
+|---|---|---|---|
+| `gsm8k_sft_train.jsonl` | GSM8K train | 3500 | SFT training |
+| `gsm8k_val.jsonl` | GSM8K test | 660 | eval |
+| `nq_eval.jsonl` | NaturalQuestions | 500 | eval + BIF query |
+| `factqa_eval.jsonl` | TruthfulQA | 500 | eval + BIF query |
+| `coding_eval.jsonl` | MBPP | 500 | eval + BIF query |
+
+All eval datasets contain **free-form answers** (not multiple choice).
+
+## Configuration
+
+### SFT Config (`configs/sft_gsm8k.yaml`)
+
+```yaml
+experiment_name: gsm8k_pythia70m    # Used for output dirs & SwanLab naming
+model_name_or_path: <YOUR_MODEL_PATH>
+output_root: runs                    # All outputs under runs/{experiment_name}/
+
+num_train_epochs: 10
+train_file: data/gsm8k_sft_train.jsonl
+eval_files:
+  gsm8k: data/gsm8k_val.jsonl
+  nq: data/nq_eval.jsonl
+  factqa: data/factqa_eval.jsonl
+  coding: data/coding_eval.jsonl
+
+use_swanlab: true
+swanlab_project: sft-bif-pipeline   # Fixed project for all experiments
+
+bottom_k: 500                        # Number of bottom samples to remove
+```
+
+### BIF Config (`configs/bif.yaml`)
+
+```yaml
+num_chains: 2
+draws_per_chain: 100
+lr: 1.0e-4
+gamma: 100.0
+nbeta: 100.0
+sampler_type: sgld
+
+sweep_lr_values: [1.0e-4]
+sweep_gamma_values: [100.0, 1000.0]
+sweep_nbeta_values: [100.0]
+```
+
+All BIF parameters are configurable — no hardcoded values.
+
+## Usage
+
+### One-Click Pipeline
 
 ```bash
-# 单卡
-python -m pipeline.cli train --config configs/sft_gsm8k.yaml
+bash scripts/run_pipeline.sh configs/sft_gsm8k.yaml configs/bif.yaml 8
+```
 
-# 8卡
+### Step by Step
+
+```bash
+# 1. SFT on full data
 torchrun --nproc_per_node=8 -m pipeline.cli train --config configs/sft_gsm8k.yaml
 
-# 覆盖参数
-torchrun --nproc_per_node=8 -m pipeline.cli train \
+# 2. Prepare BIF data (auto-converts SFT format to BIF pool/query)
+python -m pipeline.cli prepare-bif --config configs/sft_gsm8k.yaml
+
+# 3. Full pipeline (SFT -> BIF sweep -> filter -> re-SFT)
+torchrun --nproc_per_node=8 -m pipeline.cli pipeline \
     --config configs/sft_gsm8k.yaml \
-    --run_name sft_full
+    --bif_config configs/bif.yaml \
+    --num_gpus 8
 ```
 
-训练会在每个 eval domain 上分别计算 loss：
-- `eval_gsm8k_loss`
-- `eval_mmlu_loss`
-- `eval_factqa_loss`
-- `eval_coding_loss`
-
-### 3. BIF 筛选
+### Filter Only (if BIF already ran)
 
 ```bash
 python -m pipeline.cli filter \
     --train_file data/gsm8k_sft_train.jsonl \
-    --bif_result bif_result.json \
+    --bif_dir runs/gsm8k_pythia70m/bif_sweep/runs/grid_0000.../analysis \
+    --checkpoint final_model \
+    --bottom_k 500 \
     --output data/gsm8k_sft_train_filtered.jsonl
 ```
 
-### 4. 重新训练
+## Token Alignment
+
+When bottom samples are removed, the pipeline automatically increases epochs so total training tokens stay constant:
+
+```
+Round 1: 3500 samples × 10.00 epochs = 35000 sample-epochs
+Round 2: 3000 samples × 11.67 epochs = 35000 sample-epochs
+```
+
+## BIF Data Format
+
+Both pool and query are **full Q+A with `answer_start_char`** — BIF only computes loss on answer tokens, matching SFT training behavior:
+
+```
+Input:  [question tokens] [answer tokens]
+Loss:    IGNORE            ✓ computed
+                           ↑ answer_start_char points here
+```
+
+## Update BIF
 
 ```bash
-torchrun --nproc_per_node=8 -m pipeline.cli train \
-    --config configs/sft_gsm8k.yaml \
-    --train_file data/gsm8k_sft_train_filtered.jsonl \
-    --run_name sft_filtered
+git submodule update --remote third_party/BIF
 ```
-
-### 5. 一键 Pipeline
-
-```bash
-bash scripts/run_pipeline.sh configs/sft_gsm8k.yaml bif_result.json
-```
-
-## 输出结构
-
-```
-saves/gsm8k_sft/
-├── sft_full/              # Round 1: 全量数据训练
-│   ├── checkpoint-200/
-│   ├── checkpoint-400/
-│   └── ...
-└── sft_filtered/          # Round 2: BIF 筛选后训练
-    ├── checkpoint-200/
-    └── ...
-```
-
-## 配置说明
-
-见 `configs/sft_gsm8k.yaml`，关键参数：
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `model_name_or_path` | 模型路径 | - |
-| `train_file` | 训练数据 JSONL | - |
-| `eval_files` | 评估数据 dict (name: path) | {} |
-| `cutoff_len` | 最大序列长度 | 1024 |
-| `lora_rank` | LoRA rank, 0=全参训练 | 0 |
-| `use_swanlab` | 是否使用 SwanLab | false |
-| `swanlab_project` | SwanLab 项目名 | sft-bif-pipeline |
-| `chat_template` | 自定义 chat template (可选) | null |
-
-## 切换模型
-
-只需修改 `model_name_or_path`，框架自动处理：
-- Pythia: 无 chat template → 自动添加默认模板
-- Llama/Qwen: 自带 chat template → 直接使用
-- 大模型: 设置 `lora_rank: 8` + `gradient_checkpointing: true`

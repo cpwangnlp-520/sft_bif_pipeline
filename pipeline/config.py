@@ -28,13 +28,15 @@ class TrainConfig:
     cutoff_len: int = 1024
     preprocessing_num_workers: int = 8
 
-    output_dir: str = "saves/default"
-    run_name: str = "sft"
+    experiment_name: str = "experiment"
+    output_root: str = "runs"
 
     use_swanlab: bool = False
     swanlab_project: str = "sft-bif-pipeline"
 
     chat_template: Optional[str] = None
+
+    bottom_k: int = 500
 
     @classmethod
     def from_yaml(cls, path: str) -> TrainConfig:
@@ -47,16 +49,25 @@ class TrainConfig:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    @property
+    def output_dir(self) -> str:
+        return f"{self.output_root}/{self.experiment_name}"
+
+    @property
+    def swanlab_run_sft_full(self) -> str:
+        return f"{self.experiment_name}_sft_full"
+
+    @property
+    def swanlab_run_sft_filtered(self) -> str:
+        return f"{self.experiment_name}_sft_filtered"
+
+    @property
+    def swanlab_run_bif(self) -> str:
+        return f"{self.experiment_name}_bif_sweep"
+
 
 @dataclass
 class BIFConfig:
-    pool_jsonl: str = ""
-    query_jsonl: str = ""
-    model_root: str = ""
-    base_model_path: str = ""
-    tokenizer_path: str = ""
-    out_dir: str = "runs/bif"
-
     num_chains: int = 2
     draws_per_chain: int = 100
     max_length: int = 512
@@ -74,11 +85,10 @@ class BIFConfig:
     dtype: str = "bfloat16"
 
     score_col: str = "cross_corr_mean_over_queries"
-    bottom_k: int = 0
 
     sweep_lr_values: list[float] = field(default_factory=lambda: [1e-4])
-    sweep_gamma_values: list[float] = field(default_factory=lambda: [100, 1000])
-    sweep_nbeta_values: list[float] = field(default_factory=lambda: [100])
+    sweep_gamma_values: list[float] = field(default_factory=lambda: [100.0, 1000.0])
+    sweep_nbeta_values: list[float] = field(default_factory=lambda: [100.0])
 
     @classmethod
     def from_yaml(cls, path: str) -> BIFConfig:
