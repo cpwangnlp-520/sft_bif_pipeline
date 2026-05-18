@@ -107,6 +107,7 @@ def cmd_pipeline(args):
     )
 
     cmd = (
+        f"SWANLAB_PROJECT={train_config.swanlab_project} "
         f"torchrun --standalone --nnodes=1 --nproc-per-node={args.num_gpus} "
         f"-m bif.cli sweep-bif --config {sweep_config_path}"
     )
