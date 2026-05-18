@@ -1,0 +1,3 @@
+[submodule "third_party/BIF"]
+	path = third_party/BIF
+	url = git@github.com:yuzhang527/BIF.git

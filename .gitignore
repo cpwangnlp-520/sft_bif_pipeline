@@ -12,3 +12,5 @@ runs/
 data/
 !data/.gitkeep
 .swanlab/
+third_party/BIF/runs/
+third_party/BIF/swanlog/
