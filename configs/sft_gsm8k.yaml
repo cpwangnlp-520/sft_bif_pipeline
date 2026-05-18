@@ -21,7 +21,7 @@ eval_files:
   nq: data/nq_eval.jsonl
   factqa: data/factqa_eval.jsonl
   coding: data/coding_eval.jsonl
-cutoff_len: 1024
+cutoff_len: 2048
 preprocessing_num_workers: 8
 
 output_root: runs

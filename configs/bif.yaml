@@ -2,7 +2,7 @@ num_chains: 2
 draws_per_chain: 100
 max_length: 512
 train_batch_size: 32
-eval_batch_size: 64
+eval_batch_size: 128
 lr: 1.0e-4
 gamma: 100.0
 nbeta: 100.0
