@@ -1,0 +1,29 @@
+model_root: saves/gsm8k_sft/sft_full
+base_model_path: /workspace/pku_percy/models/pythia-70m-step1000
+tokenizer_path: /workspace/pku_percy/models/pythia-70m-step1000
+pool_jsonl: data/bif_pool.jsonl
+query_jsonl: data/bif_query.jsonl
+out_dir: saves/gsm8k_sft/bif_sweep
+
+num_chains: 2
+draws_per_chain: 100
+max_length: 512
+train_batch_size: 32
+eval_batch_size: 64
+lr: 1.0e-4
+gamma: 100.0
+nbeta: 100.0
+nbeta_mode: devinterp
+noise_level: 1.0
+num_burnin_steps: 100
+num_steps_bw_draws: 2
+sampler_type: sgld
+seed: 42
+dtype: bfloat16
+
+score_col: cross_corr_mean_over_queries
+bottom_k: 500
+
+sweep_lr_values: [1.0e-4]
+sweep_gamma_values: [100, 1000]
+sweep_nbeta_values: [100]

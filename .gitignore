@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+saves/
+runs/
+*.safetensors
+*.bin
+*.arrow
+data/
+!data/.gitkeep
+.swanlab/
