@@ -7,7 +7,7 @@ A lightweight pipeline for SFT training with BIF (Bayesian Influence Function) d
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
 │ Prepare Data │────>│  Round 1 SFT │────>│   BIF Sweep  │
-│  (3500 sft)  │     │  (full data) │     │ (base vs     │
+│  (4000 sft)  │     │  (full data) │     │ (base vs     │
 │  (2000 eval) │     │  (10 epochs) │     │  final ckpt) │
 └─────────────┘     └──────────────┘     └──────┬───────┘
                                                  │
@@ -134,14 +134,14 @@ cd third_party/BIF && pip install -e . && cd ../..
 ## Data Preparation
 
 ```bash
-python scripts/prepare_data.py --num_train 3500 --num_val 500 --num_eval 500 --seed 42
+python scripts/prepare_data.py --num_train 4000 --num_val 500 --num_eval 500 --seed 42
 ```
 
 Downloads and prepares:
 
 | File | Source | Count | Purpose |
 |---|---|---|---|
-| `gsm8k_sft_train.jsonl` | GSM8K train | 3500 | SFT training |
+| `gsm8k_sft_train.jsonl` | GSM8K train | 4000 | SFT training |
 | `gsm8k_val.jsonl` | GSM8K train | 500 | eval |
 | `nq_eval.jsonl` | NaturalQuestions | 500 | eval + BIF query |
 | `factqa_eval.jsonl` | TruthfulQA | 500 | eval + BIF query |
@@ -240,8 +240,8 @@ python -m pipeline.cli filter \
 When bottom samples are removed, the pipeline automatically increases epochs so total training tokens stay constant:
 
 ```
-Round 1: 3500 samples × 10.00 epochs = 35000 sample-epochs
-Round 2: 3000 samples × 11.67 epochs = 35000 sample-epochs
+Round 1: 4000 samples × 10.00 epochs = 40000 sample-epochs
+Round 2: 3500 samples × 11.43 epochs = 40000 sample-epochs
 ```
 
 ## BIF Data Format
