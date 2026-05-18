@@ -7,7 +7,7 @@ import argparse
 import random
 
 
-def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, seed: int = 42) -> None:
+def prepare_gsm8k(output_dir: str = "data", num_train: int = 4000, num_val: int = 500, seed: int = 42) -> None:
     from datasets import load_dataset
 
     ds = load_dataset("openai/gsm8k", "main")
@@ -26,7 +26,21 @@ def prepare_gsm8k(output_dir: str = "data", num_train: int = 3500, seed: int = 4
             ]
             f.write(json.dumps({"id": str(idx), "messages": messages}, ensure_ascii=False) + "\n")
 
-    print(f"gsm8k: {len(train_items)} train (from {len(ds['train'])} total, seed={seed})")
+    val_items = list(ds["test"])
+    rng2 = random.Random(seed)
+    rng2.shuffle(val_items)
+    val_items = val_items[:num_val]
+
+    val_path = os.path.join(output_dir, "gsm8k_val.jsonl")
+    with open(val_path, "w", encoding="utf-8") as f:
+        for item in val_items:
+            messages = [
+                {"role": "user", "content": item["question"]},
+                {"role": "assistant", "content": item["answer"]},
+            ]
+            f.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
+
+    print(f"gsm8k: {len(train_items)} train, {len(val_items)} val (seed={seed})")
 
 
 def prepare_nq(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
@@ -115,7 +129,8 @@ def main():
     parser.add_argument("--output_dir", type=str, default="data")
     parser.add_argument("--dataset", type=str, default="all",
                         choices=["all", "gsm8k", "nq", "coding", "factqa"])
-    parser.add_argument("--num_train", type=int, default=3500, help="GSM8K train samples")
+    parser.add_argument("--num_train", type=int, default=4000, help="GSM8K train samples")
+    parser.add_argument("--num_val", type=int, default=500, help="GSM8K val samples")
     parser.add_argument("--num_eval", type=int, default=500, help="Eval samples per domain")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -123,7 +138,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     funcs = {
-        "gsm8k": lambda: prepare_gsm8k(args.output_dir, args.num_train, args.seed),
+        "gsm8k": lambda: prepare_gsm8k(args.output_dir, args.num_train, args.num_val, args.seed),
         "nq": lambda: prepare_nq(args.output_dir, args.num_eval, args.seed),
         "coding": lambda: prepare_coding(args.output_dir, args.num_eval, args.seed),
         "factqa": lambda: prepare_factqa(args.output_dir, args.num_eval, args.seed),
