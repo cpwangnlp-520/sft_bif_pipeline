@@ -62,7 +62,7 @@ class TrainConfig:
     output_root: str = "runs"
 
     use_swanlab: bool = False
-    swanlab_project: str = "sft-bif-pipeline"
+    swanlab_project: str = "sft-bif-drop-compare"
     swanlab_group: str = ""
 
     chat_template: Optional[str] = None

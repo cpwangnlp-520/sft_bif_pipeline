@@ -118,7 +118,7 @@ eval_files:
   nq: data/nq_eval.jsonl
 
 use_swanlab: true
-swanlab_project: sft-bif-pipeline
+swanlab_project: sft-bif-drop-compare
 swanlab_group: ""            # Group experiments in SwanLab
 
 bif_checkpoints: [final_model]   # Checkpoints to run BIF on

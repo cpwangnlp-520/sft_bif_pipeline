@@ -25,7 +25,7 @@ preprocessing_num_workers: 4
 output_root: runs
 
 use_swanlab: true
-swanlab_project: sft-bif-pipeline
+swanlab_project: sft-bif-drop-compare
 
 bif_checkpoints: [final_model]
 bif_query_exclude: []
