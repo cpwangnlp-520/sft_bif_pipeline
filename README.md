@@ -7,23 +7,22 @@ Train SFT models, run BIF (Bayesian Influence Function) analysis to identify inf
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │ Prepare Data  │────>│  SFT (full)  │────>│  BIF Sweep   │
-│               │     │  8 GPUs      │     │  1 GPU       │
+│               │     │  1 or N GPUs │     │  1 GPU       │
 └──────────────┘     └──────────────┘     └──────┬───────┘
-                                                  │
-                                          BIF scores per sample
-                                          (top_k / bottom_k CSVs)
-                                                  │
-                    ┌─────────────────────────────┼─────────────────────────┐
-                    │                             │                         │
-              ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
-              │ drop bottom │              │  drop top   │          │ drop random │
-              │ (harmful)   │              │(influential)│          │  (baseline) │
-              └─────┬──────┘              └───────┬─────┘          └───────┬─────┘
-                    │                             │                         │
-              ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
-              │ Re-SFT     │              │  Re-SFT     │          │  Re-SFT     │
-              │ (8 GPUs)   │              │  (8 GPUs)   │          │  (8 GPUs)   │
-              └────────────┘              └─────────────┘          └─────────────┘
+                                                   │
+                                           BIF scores per sample
+                                           (top_k / bottom_k CSVs)
+                                                   │
+                     ┌─────────────────────────────┼─────────────────────────┐
+                     │                             │                         │
+               ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
+               │ drop bottom │              │  drop top   │          │ drop random │
+               │ (harmful)   │              │(influential)│          │  (baseline) │
+               └─────┬──────┘              └───────┬─────┘          └───────┬─────┘
+                     │                             │                         │
+               ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
+               │ Re-SFT     │              │  Re-SFT     │          │  Re-SFT     │
+               └────────────┘              └─────────────┘          └─────────────┘
 ```
 
 **Key insight**: If dropping bottom-BIF samples improves performance more than dropping random samples, BIF successfully identifies harmful training data.
@@ -103,27 +102,38 @@ sweep_nbeta_values: [100.0]
 ### One-Click Pipeline
 
 ```bash
-bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8
+# Single GPU
+bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 1
+
+# Multi-GPU (8 GPUs)
+bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8 0
 ```
 
 ### Step by Step
 
 ```bash
-# 1. SFT on full data (8 GPUs)
+# 1. SFT on full data (single GPU)
+python -m pipeline.cli train --config configs/step10000.yaml
+
+# 1. SFT on full data (multi-GPU)
 torchrun --nproc_per_node=8 -m pipeline.cli train --config configs/step10000.yaml
 
 # 2. Prepare BIF pool/query data
 python -m pipeline.cli prepare-bif --config configs/step10000.yaml
 
-# 3. Run BIF sweep (single GPU, one checkpoint at a time)
+# 3. Full pipeline (BIF on GPU 0, SFT on 8 GPUs)
 python -m pipeline.cli pipeline --config configs/step10000.yaml \
     --bif_config configs/bif.yaml --gpu 0 --num_gpus 8
+
+# 3. Full pipeline (single GPU)
+python -m pipeline.cli pipeline --config configs/step10000.yaml \
+    --bif_config configs/bif.yaml --gpu 0 --num_gpus 1
 
 # 4. Prepare drop datasets from BIF results
 python -m pipeline.cli prepare-drop --config configs/step10000.yaml
 
-# 5. Re-train on each dropped variant (8 GPUs)
-torchrun --nproc_per_node=8 -m pipeline.cli train \
+# 5. Re-train on each dropped variant
+python -m pipeline.cli train \
     --config configs/step10000.yaml \
     --train_file runs/.../drop_data/gsm8k_sft_train_drop_bottom_500.jsonl \
     --run_name my_exp_drop_bottom_500
@@ -185,7 +195,7 @@ runs/{experiment_name}/
 ## Important Notes
 
 - **BIF runs on single GPU** (not torchrun). Each checkpoint gets its own sweep config.
-- **SFT training uses 8 GPUs** with torchrun. Multiple drop experiments run serially.
+- **SFT supports single-GPU (`python -m`) and multi-GPU (`torchrun`)**. The `pipeline` command uses `--num_gpus` to control this.
 - **Don't change batch size** between experiments — steps must be comparable.
 - **pool_only mode**: When BIF only analyzed a subset of training data (e.g., first 1000 of 3500), use `--pool_only --pool_size 1000` so random drop samples from the same pool for fair comparison.
 - **SwanLab group**: Use `swanlab_group` to group related experiments (e.g., all drop-200 variants) in the same chart.

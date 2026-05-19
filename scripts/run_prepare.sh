@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CONFIG=${1:-configs/step10000.yaml}
-GPU=${2:-0}
+NUM_GPUS=${2:-1}
 
 echo "=== Prepare BIF data ==="
 python -m pipeline.cli prepare-bif --config "$CONFIG"

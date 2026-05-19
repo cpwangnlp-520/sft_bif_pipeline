@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 
 from .bif import find_best_sweep_run, generate_bif_configs
 from .config import BIFConfig, DropConfig, TrainConfig
@@ -12,6 +13,22 @@ from .data import (
     sft_to_bif_pool,
 )
 from .train import run_sft
+
+
+def _build_train_cmd(config_path: str, num_gpus: int, train_file: str | None = None,
+                     run_name: str | None = None) -> str:
+    parts = []
+    if num_gpus > 1:
+        parts.append(f"torchrun --nproc_per_node={num_gpus}")
+    else:
+        parts.append("python")
+    parts.append("-m pipeline.cli train")
+    parts.append(f"--config {config_path}")
+    if train_file:
+        parts.append(f"--train_file {train_file}")
+    if run_name:
+        parts.append(f"--run_name {run_name}")
+    return " ".join(parts)
 
 
 def cmd_train(args):
@@ -74,14 +91,22 @@ def cmd_pipeline(args):
 
     original_count = sum(1 for _ in open(train_config.train_file))
 
+    num_gpus = args.num_gpus
+
     # ========================================
     # Step 1: SFT on full data
     # ========================================
     print("=" * 60)
-    print("STEP 1: SFT on full data")
+    print(f"STEP 1: SFT on full data ({num_gpus} GPU{'s' if num_gpus > 1 else ''})")
     print("=" * 60)
     sft_run_name = f"{exp_name}_sft_full"
-    sft_output = run_sft(train_config, run_name_override=sft_run_name)
+    train_cmd = _build_train_cmd(args.config, num_gpus, run_name=sft_run_name)
+    print(f"[sft] Command: {train_cmd}")
+    ret = subprocess.call(train_cmd, shell=True)
+    if ret != 0:
+        print(f"[sft] Training failed (code={ret}). Aborting pipeline.")
+        return
+    sft_output = train_config.output_dir
 
     # ========================================
     # Step 2: Prepare BIF data
@@ -156,12 +181,13 @@ def cmd_pipeline(args):
         print("=" * 60)
 
         run_name = f"{exp_name}_drop_{strategy_name}_{drop_cfg.k}"
-        model_dir = run_sft(
-            train_config,
-            train_file_override=drop_path,
-            run_name_override=run_name,
-        )
-        train_results[strategy_name] = model_dir
+        drop_cmd = _build_train_cmd(args.config, num_gpus, train_file=drop_path, run_name=run_name)
+        print(f"[sft] Command: {drop_cmd}")
+        ret = subprocess.call(drop_cmd, shell=True)
+        if ret != 0:
+            print(f"[sft] Training for {strategy_name} failed (code={ret}). Skipping.")
+            continue
+        train_results[strategy_name] = os.path.join(train_config.output_dir, run_name)
 
     # ========================================
     # Summary
@@ -212,7 +238,7 @@ def main():
     p_pipe.add_argument("--config", required=True)
     p_pipe.add_argument("--bif_config", default=None)
     p_pipe.add_argument("--gpu", default="0", help="GPU id for BIF sweep (single GPU)")
-    p_pipe.add_argument("--num_gpus", type=int, default=8, help="GPU count for SFT training")
+    p_pipe.add_argument("--num_gpus", type=int, default=1, help="GPU count for SFT training")
 
     args = parser.parse_args()
     {
