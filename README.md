@@ -36,6 +36,8 @@ cd third_party/BIF && pip install -e . && cd ../..
 
 ## Data Preparation
 
+### Quick Start (Built-in Datasets)
+
 ```bash
 python scripts/prepare_data.py --num_train 3500 --num_eval 500 --seed 42
 ```
@@ -47,6 +49,55 @@ python scripts/prepare_data.py --num_train 3500 --num_eval 500 --seed 42
 | `nq_eval.jsonl` | NaturalQuestions | 500 | eval + BIF query |
 | `factqa_eval.jsonl` | TruthfulQA | 500 | eval + BIF query |
 | `coding_eval.jsonl` | MBPP | 500 | eval + BIF query |
+
+Supports `--dataset all|gsm8k|nq|coding|factqa` to prepare individually. Existing files are skipped automatically.
+
+### Data Format
+
+All data files are JSONL with OpenAI **messages** format:
+
+**Training data** (`train_file`) — must include `id` and `messages`:
+
+```jsonl
+{"id": "0", "messages": [{"role": "user", "content": "Question..."}, {"role": "assistant", "content": "Answer..."}]}
+{"id": "1", "messages": [{"role": "user", "content": "Question..."}, {"role": "assistant", "content": "Answer..."}]}
+```
+
+**Eval data** (`eval_files`) — same format, `id` optional:
+
+```jsonl
+{"messages": [{"role": "user", "content": "Question..."}, {"role": "assistant", "content": "Answer..."}]}
+```
+
+Also supports **Alpaca format** (`instruction`/`input`/`output` columns) — auto-converted to messages.
+
+### Using Your Own Data
+
+1. Prepare your training JSONL in messages format (with `id` field):
+   ```bash
+   # Example: convert from CSV
+   python -c "
+   import json, csv
+   with open('my_train.csv') as f:
+       reader = csv.DictReader(f)
+       with open('data/my_train.jsonl', 'w') as out:
+           for i, row in enumerate(reader):
+               record = {'id': str(i), 'messages': [
+                   {'role': 'user', 'content': row['question']},
+                   {'role': 'assistant', 'content': row['answer']},
+               ]}
+               out.write(json.dumps(record, ensure_ascii=False) + '\n')
+   "
+   ```
+
+2. Point your config to the new data:
+   ```yaml
+   train_file: data/my_train.jsonl
+   eval_files:
+     my_task: data/my_eval.jsonl
+   ```
+
+3. Run the pipeline as usual.
 
 ## Configuration
 
