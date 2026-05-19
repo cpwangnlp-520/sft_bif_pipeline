@@ -1,261 +1,191 @@
 # SFT-BIF Training Pipeline
 
-A lightweight pipeline for SFT training with BIF (Bayesian Influence Function) data filtering.
+Train SFT models, run BIF (Bayesian Influence Function) analysis to identify influential/harmful training samples, and compare BIF-guided data filtering against random filtering.
 
 ## Pipeline Flow
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│ Prepare Data │────>│  Round 1 SFT │────>│   BIF Sweep  │
-│  (4000 sft)  │     │  (full data) │     │ (base vs     │
-│  (2000 eval) │     │  (10 epochs) │     │  final ckpt) │
-└─────────────┘     └──────────────┘     └──────┬───────┘
-                                                 │
-                                          bottom_ids (lowest influence)
-                                                 │
-                                          ┌──────▼───────┐
-                                          │   Filter     │
-                                          │   bottom_k   │
-                                          └──────┬───────┘
-                                                 │
-                                          ┌──────▼───────┐
-                                          │  Round 2 SFT │
-                                          │ (filtered,   │
-                                          │ token-aligned│
-                                          │  epochs)     │
-                                          └──────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Prepare Data  │────>│  SFT (full)  │────>│  BIF Sweep   │
+│               │     │  8 GPUs      │     │  1 GPU       │
+└──────────────┘     └──────────────┘     └──────┬───────┘
+                                                  │
+                                          BIF scores per sample
+                                          (top_k / bottom_k CSVs)
+                                                  │
+                    ┌─────────────────────────────┼─────────────────────────┐
+                    │                             │                         │
+              ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
+              │ drop bottom │              │  drop top   │          │ drop random │
+              │ (harmful)   │              │(influential)│          │  (baseline) │
+              └─────┬──────┘              └───────┬─────┘          └───────┬─────┘
+                    │                             │                         │
+              ┌─────▼──────┐              ┌───────▼─────┐          ┌───────▼─────┐
+              │ Re-SFT     │              │  Re-SFT     │          │  Re-SFT     │
+              │ (8 GPUs)   │              │  (8 GPUs)   │          │  (8 GPUs)   │
+              └────────────┘              └─────────────┘          └─────────────┘
 ```
 
-**SwanLab** tracks all experiments under one project with clear naming:
-
-| Experiment | SwanLab Name |
-|---|---|
-| Round 1 SFT | `{experiment_name}_sft_full` |
-| BIF trace | `bif_{run_id}` |
-| BIF analysis | `analyze_{run_id}` |
-| BIF diagnostics | `diagnostics_{run_id}` |
-| Round 2 SFT | `{experiment_name}_sft_filtered` |
-
-## BIF Sweep Flow
-
-BIF sweep runs a grid search over SGLD hyperparameters (lr × gamma × nbeta). For each grid point:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    BIF Sweep (per grid point)                 │
-│                                                              │
-│  1. run-bif                                                  │
-│     ├─ Load base_model + final_model checkpoints             │
-│     ├─ Run SGLD sampler on each checkpoint                   │
-│     │   (num_chains × draws_per_chain draws per checkpoint)  │
-│     └─ Save loss traces: observable_loss_trace.npz           │
-│                    query_loss_trace.npz                       │
-│                    step_loss_trace.npz                        │
-│                                                              │
-│  2. analyze-bif                                              │
-│     ├─ Compute BIF scores per pool sample                    │
-│     │   score = cross_corr_mean_over_queries                 │
-│     ├─ Rank all pool samples by influence score              │
-│     ├─ Save: pool_scores.csv, top_K.csv, bottom_K.csv        │
-│     └─ Generate correlation heatmaps & distribution plots    │
-│                                                              │
-│  3. diagnostics                                               │
-│     ├─ Split stability: split pool K times, check top-K      │
-│     │   overlap (Spearman correlation between splits)         │
-│     ├─ Chain stability: compare scores across SGLD chains    │
-│     └─ Save: diagnostics_summary.csv, stability charts       │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Multi-GPU**: Each GPU runs a disjoint subset of grid points in parallel. BIF traces
-within each grid point are single-process (one GPU per point). With 8 GPUs and 18 grid
-points, each GPU handles ~3 points sequentially.
-
-**Output per grid point:**
-
-```
-bif_sweep/runs/grid_0000_lr0p0001_gamma100_nbeta100/
-├── traces/                    # run-bif output
-│   ├── base_model/            # BIF traces for base model
-│   │   ├── chain_000/
-│   │   └── chain_001/
-│   └── final_model/           # BIF traces for final model
-│       ├── chain_000/
-│       └── chain_001/
-├── analysis/                  # analyze-bif output
-│   ├── base_model/
-│   │   └── pool_scores.csv
-│   └── final_model/
-│       ├── pool_scores.csv    # All samples with influence scores
-│       ├── top_500.csv        # Most influential samples
-│       └── bottom_500.csv     # Least influential (harmful) samples
-├── diagnostics/               # stability diagnostics
-│   └── final_model/
-│       └── diagnostics_summary.csv
-├── run_config.yaml
-├── analysis_config.yaml
-└── sweep_run_manifest.json
-```
-
-**Sweep summary** (`bif_sweep/sweep_summary.csv`): one row per grid point with
-lr, gamma, nbeta, status, elapsed time, and diagnostic metrics.
-
-## Output Structure
-
-```
-runs/{experiment_name}/
-├── {experiment_name}_sft_full/       # Round 1 model
-├── final_model -> {experiment_name}_sft_full/  # Symlink for BIF
-├── {experiment_name}_sft_filtered/   # Round 2 model
-├── bif_sweep/                        # BIF sweep results
-│   ├── base_run.yaml                 # Auto-generated base config
-│   ├── sweep.yaml                    # Auto-generated sweep config
-│   ├── sweep_plan.csv                # Grid plan (lr × gamma × nbeta)
-│   ├── sweep_summary.csv             # Results summary
-│   ├── traces/                       # BIF trace data
-│   └── runs/                         # Per-grid-point results
-│       ├── grid_0000_.../
-│       ├── grid_0001_.../
-│       └── ...
-├── bif_pool.jsonl                    # BIF pool data (full Q+A)
-└── bif_query.jsonl                   # BIF query data (full Q+A)
-```
+**Key insight**: If dropping bottom-BIF samples improves performance more than dropping random samples, BIF successfully identifies harmful training data.
 
 ## Install
 
 ```bash
 pip install -e .
-
-# Install BIF submodule
 cd third_party/BIF && pip install -e . && cd ../..
 ```
 
 ## Data Preparation
 
 ```bash
-python scripts/prepare_data.py --num_train 4000 --num_val 500 --num_eval 500 --seed 42
+python scripts/prepare_data.py --num_train 3500 --num_eval 500 --seed 42
 ```
-
-Downloads and prepares:
 
 | File | Source | Count | Purpose |
 |---|---|---|---|
-| `gsm8k_sft_train.jsonl` | GSM8K train | 4000 | SFT training |
+| `gsm8k_sft_train.jsonl` | GSM8K train | 3500 | SFT training + BIF pool |
 | `gsm8k_val.jsonl` | GSM8K train | 500 | eval |
 | `nq_eval.jsonl` | NaturalQuestions | 500 | eval + BIF query |
 | `factqa_eval.jsonl` | TruthfulQA | 500 | eval + BIF query |
 | `coding_eval.jsonl` | MBPP | 500 | eval + BIF query |
 
-All eval datasets contain **free-form answers** (not multiple choice).
-
 ## Configuration
 
-### SFT Config (`configs/sft_gsm8k.yaml`)
+### Train Config (`configs/train.yaml`)
 
 ```yaml
-experiment_name: gsm8k_pythia70m    # Used for output dirs & SwanLab naming
-model_name_or_path: <YOUR_MODEL_PATH>
-output_root: runs                    # All outputs under runs/{experiment_name}/
+model_name_or_path: /path/to/model
+experiment_name: my_experiment
 
 num_train_epochs: 10
-gradient_accumulation_steps: 1       # 1 step = batch_size × 1 × num_gpus
-cutoff_len: 2048                     # Max token length
-train_file: data/gsm8k_sft_train.jsonl
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 5.0e-5
+
+train_file: data/train.jsonl
 eval_files:
   gsm8k: data/gsm8k_val.jsonl
   nq: data/nq_eval.jsonl
-  factqa: data/factqa_eval.jsonl
-  coding: data/coding_eval.jsonl
 
 use_swanlab: true
-swanlab_project: sft-bif-pipeline   # Fixed project for all experiments
+swanlab_project: sft-bif-pipeline
+swanlab_group: ""            # Group experiments in SwanLab
 
-bottom_k: 500                        # Number of bottom samples to remove
+bif_checkpoints: [final_model]   # Checkpoints to run BIF on
+bif_query_exclude: [gsm8k]       # Exclude eval sets from BIF query
+
+drop:
+  strategies: [bottom, top, random]
+  k: 500
+  pool_only: false           # If true, random only samples from BIF pool
 ```
 
 ### BIF Config (`configs/bif.yaml`)
 
 ```yaml
-# SGLD sampler parameters
 num_chains: 2
-draws_per_chain: 100
-num_burnin_steps: 100
-num_steps_bw_draws: 2
-sampler_type: sgld
+draws_per_chain: 800
 max_length: 512
 train_batch_size: 32
-eval_batch_size: 128
-
-# Default sweep grid point
-lr: 1.0e-4
-gamma: 100.0
+eval_batch_size: 256
+lr: 1.0e-5
+gamma: 1000.0
 nbeta: 100.0
-
-# Sweep grid (2 × 3 × 3 = 18 points)
-sweep_lr_values: [1.0e-4, 1.0e-5]
-sweep_gamma_values: [10.0, 100.0, 1000.0]
-sweep_nbeta_values: [10.0, 100.0, 1000.0]
+sampler_type: sgld
+top_k: 200                  # Number of top/bottom samples to identify
+sweep_lr_values: [1.0e-5]
+sweep_gamma_values: [1000.0]
+sweep_nbeta_values: [100.0]
 ```
-
-All parameters are configurable — no hardcoded values.
 
 ## Usage
 
 ### One-Click Pipeline
 
 ```bash
-bash scripts/run_pipeline.sh configs/sft_gsm8k.yaml configs/bif.yaml 8
+bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8
 ```
 
 ### Step by Step
 
 ```bash
-# 1. SFT on full data
-torchrun --nproc_per_node=8 -m pipeline.cli train --config configs/sft_gsm8k.yaml
+# 1. SFT on full data (8 GPUs)
+torchrun --nproc_per_node=8 -m pipeline.cli train --config configs/step10000.yaml
 
-# 2. Prepare BIF data (auto-converts SFT format to BIF pool/query)
-python -m pipeline.cli prepare-bif --config configs/sft_gsm8k.yaml
+# 2. Prepare BIF pool/query data
+python -m pipeline.cli prepare-bif --config configs/step10000.yaml
 
-# 3. Full pipeline (SFT -> BIF sweep -> filter -> re-SFT)
-torchrun --nproc_per_node=8 -m pipeline.cli pipeline \
-    --config configs/sft_gsm8k.yaml \
-    --bif_config configs/bif.yaml \
-    --num_gpus 8
+# 3. Run BIF sweep (single GPU, one checkpoint at a time)
+python -m pipeline.cli pipeline --config configs/step10000.yaml \
+    --bif_config configs/bif.yaml --gpu 0 --num_gpus 8
+
+# 4. Prepare drop datasets from BIF results
+python -m pipeline.cli prepare-drop --config configs/step10000.yaml
+
+# 5. Re-train on each dropped variant (8 GPUs)
+torchrun --nproc_per_node=8 -m pipeline.cli train \
+    --config configs/step10000.yaml \
+    --train_file runs/.../drop_data/gsm8k_sft_train_drop_bottom_500.jsonl \
+    --run_name my_exp_drop_bottom_500
 ```
 
-### Filter Only (if BIF already ran)
+### prepare-drop Options
 
 ```bash
-python -m pipeline.cli filter \
+# From config (uses drop section)
+python -m pipeline.cli prepare-drop --config configs/step10000.yaml
+
+# Manual mode
+python -m pipeline.cli prepare-drop \
     --train_file data/gsm8k_sft_train.jsonl \
-    --bif_dir runs/gsm8k_pythia70m/bif_sweep/runs/grid_0000.../analysis \
-    --checkpoint final_model \
-    --bottom_k 500 \
-    --output data/gsm8k_sft_train_filtered.jsonl
+    --csv_dir runs/.../bif_sweep/final_model/runs/basemodel_0000.../analysis \
+    --strategies bottom top random \
+    --k 200 \
+    --pool_only --pool_size 1000    # Random only from first 1000 samples
 ```
 
-## Token Alignment
+## CLI Commands
 
-When bottom samples are removed, the pipeline automatically increases epochs so total training tokens stay constant:
+| Command | Description |
+|---|---|
+| `train` | Run SFT training |
+| `prepare-bif` | Convert SFT data to BIF pool/query format |
+| `prepare-drop` | Prepare drop datasets from BIF CSVs |
+| `pipeline` | Full pipeline: SFT -> BIF -> drop -> re-SFT |
 
-```
-Round 1: 4000 samples × 10.00 epochs = 40000 sample-epochs
-Round 2: 3500 samples × 11.43 epochs = 40000 sample-epochs
-```
-
-## BIF Data Format
-
-Both pool and query are **full Q+A with `answer_start_char`** — BIF only computes loss on answer tokens, matching SFT training behavior:
+## Output Structure
 
 ```
-Input:  [question tokens] [answer tokens]
-Loss:    IGNORE            ✓ computed
-                           ↑ answer_start_char points here
+runs/{experiment_name}/
+├── {name}_sft_full/              # Full-data SFT model
+├── final_model -> .../           # Symlink for BIF
+├── bif_pool.jsonl                # BIF pool (training data in BIF format)
+├── bif_query.jsonl               # BIF query (eval data in BIF format)
+├── bif_sweep/                    # BIF sweep results
+│   ├── final_model/
+│   │   ├── base_run.yaml
+│   │   ├── sweep.yaml
+│   │   ├── traces/
+│   │   └── runs/
+│   │       └── basemodel_0000_lr.../
+│   │           └── analysis/final_model/
+│   │               ├── pool_scores.csv
+│   │               ├── top_200.csv
+│   │               └── bottom_200.csv
+│   └── base_model/              # (if bif_checkpoints includes base_model)
+├── drop_data/                    # Prepared drop datasets
+│   ├── gsm8k_sft_train_drop_bottom_500.jsonl
+│   ├── gsm8k_sft_train_drop_top_500.jsonl
+│   └── gsm8k_sft_train_drop_random_500.jsonl
+└── {name}_drop_bottom_500/       # Re-trained models
+├── {name}_drop_top_500/
+└── {name}_drop_random_500/
 ```
 
-## Update BIF
+## Important Notes
 
-```bash
-git submodule update --remote third_party/BIF
-```
+- **BIF runs on single GPU** (not torchrun). Each checkpoint gets its own sweep config.
+- **SFT training uses 8 GPUs** with torchrun. Multiple drop experiments run serially.
+- **Don't change batch size** between experiments — steps must be comparable.
+- **pool_only mode**: When BIF only analyzed a subset of training data (e.g., first 1000 of 3500), use `--pool_only --pool_size 1000` so random drop samples from the same pool for fair comparison.
+- **SwanLab group**: Use `swanlab_group` to group related experiments (e.g., all drop-200 variants) in the same chart.

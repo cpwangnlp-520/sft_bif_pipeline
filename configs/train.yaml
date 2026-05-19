@@ -1,4 +1,4 @@
-model_name_or_path: /workspace/pku_percy/models/pythia-70m-step10000
+model_name_or_path: /path/to/your/model
 
 num_train_epochs: 10
 per_device_train_batch_size: 4
@@ -13,24 +13,20 @@ eval_steps: 10
 seed: 42
 gradient_checkpointing: false
 
-train_file: data/gsm8k_sft_train.jsonl
+train_file: data/train.jsonl
 eval_files:
-  gsm8k: data/gsm8k_val.jsonl
-  nq: data/nq_eval.jsonl
-  factqa: data/factqa_eval.jsonl
-  coding: data/coding_eval.jsonl
+  task_a: data/eval_a.jsonl
+  task_b: data/eval_b.jsonl
+
 cutoff_len: 2048
 preprocessing_num_workers: 4
 
 output_root: runs
+experiment_name: my_experiment
 
 use_swanlab: true
 swanlab_project: sft-bif-pipeline
+swanlab_group: ""
 
 bif_checkpoints: [final_model]
-bif_query_exclude: []
-
-drop:
-  strategies: [bottom, top, random]
-  k: 500
-  pool_only: false
+bif_query_exclude: [task_a]

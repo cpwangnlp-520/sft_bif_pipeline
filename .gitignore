@@ -4,11 +4,17 @@ __pycache__/
 dist/
 build/
 .eggs/
+
 saves/
 runs/
+logs/
+swanlog/
+.swanlab/
+
 *.safetensors
 *.bin
 *.arrow
+
 data/*
 !data/gsm8k_sft_train.jsonl
 !data/gsm8k_val.jsonl
@@ -16,6 +22,8 @@ data/*
 !data/factqa_eval.jsonl
 !data/coding_eval.jsonl
 !data/.gitkeep
-.swanlab/
+
+overlap_heatmap_*.png
+
 third_party/BIF/runs/
 third_party/BIF/swanlog/

@@ -1,10 +1,10 @@
 num_chains: 2
-draws_per_chain: 100
+draws_per_chain: 800
 max_length: 512
 train_batch_size: 32
-eval_batch_size: 128
-lr: 1.0e-4
-gamma: 100.0
+eval_batch_size: 256
+lr: 1.0e-5
+gamma: 1000.0
 nbeta: 100.0
 nbeta_mode: devinterp
 noise_level: 1.0
@@ -13,9 +13,9 @@ num_steps_bw_draws: 2
 sampler_type: sgld
 seed: 42
 dtype: bfloat16
-
 score_col: cross_corr_mean_over_queries
-
-sweep_lr_values: [1.0e-4, 1.0e-5]
-sweep_gamma_values: [10.0, 100.0, 1000.0]
-sweep_nbeta_values: [10.0, 100.0, 1000.0]
+pool_eval_subset: 0
+top_k: 200
+sweep_lr_values: [1.0e-5]
+sweep_gamma_values: [1000.0]
+sweep_nbeta_values: [100.0]

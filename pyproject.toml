@@ -14,5 +14,8 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["pipeline*"]
+
 [project.scripts]
 train-pipeline = "pipeline.cli:main"

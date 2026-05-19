@@ -13,6 +13,29 @@ def _short_model_name(path: str) -> str:
 
 
 @dataclass
+class DropConfig:
+    strategies: list[str] = field(default_factory=lambda: ["bottom", "top", "random"])
+    k: int = 500
+    csv_dir: str = ""
+    csv_name: str = "final_model"
+    random_seed: int = 42
+    pool_only: bool = False
+    pool_size: int = 0
+
+    VALID = {"bottom", "top", "random"}
+
+    def __post_init__(self):
+        bad = set(self.strategies) - self.VALID
+        if bad:
+            raise ValueError(f"Invalid drop strategies: {bad}")
+
+    @classmethod
+    def from_dict(cls, d: dict) -> DropConfig:
+        keys = set(cls.__dataclass_fields__.keys())
+        return cls(**{k: v for k, v in d.items() if k in keys})
+
+
+@dataclass
 class TrainConfig:
     model_name_or_path: str = ""
 
@@ -40,21 +63,29 @@ class TrainConfig:
 
     use_swanlab: bool = False
     swanlab_project: str = "sft-bif-pipeline"
+    swanlab_group: str = ""
 
     chat_template: Optional[str] = None
 
-    bottom_k: int = 500
+    bif_checkpoints: list[str] = field(default_factory=lambda: ["final_model"])
+    bif_query_exclude: list[str] = field(default_factory=list)
+
+    drop: Optional[dict] = None
 
     @classmethod
     def from_yaml(cls, path: str) -> TrainConfig:
         with open(path) as f:
             d = yaml.safe_load(f) or {}
-        valid_keys = set(cls.__dataclass_fields__.keys())
-        filtered = {k: v for k, v in d.items() if k in valid_keys}
-        return cls(**filtered)
+        keys = set(cls.__dataclass_fields__.keys())
+        return cls(**{k: v for k, v in d.items() if k in keys})
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def get_drop_config(self) -> Optional[DropConfig]:
+        if self.drop is None:
+            return None
+        return DropConfig.from_dict(self.drop)
 
     @property
     def auto_name(self) -> str:
@@ -76,29 +107,14 @@ class TrainConfig:
         name = self.experiment_name or self.auto_name
         return f"{self.output_root}/{name}"
 
-    @property
-    def swanlab_run_sft_full(self) -> str:
-        name = self.experiment_name or self.auto_name
-        return f"{name}_sft_full"
-
-    @property
-    def swanlab_run_sft_filtered(self) -> str:
-        name = self.experiment_name or self.auto_name
-        return f"{name}_sft_filtered"
-
-    @property
-    def swanlab_run_bif(self) -> str:
-        name = self.experiment_name or self.auto_name
-        return f"{name}_bif_sweep"
-
 
 @dataclass
 class BIFConfig:
     num_chains: int = 2
     draws_per_chain: int = 100
-    max_length: int = 512
+    max_length: int = 1024
     train_batch_size: int = 32
-    eval_batch_size: int = 64
+    eval_batch_size: int = 128
     lr: float = 1e-4
     gamma: float = 100.0
     nbeta: float = 100.0
@@ -109,17 +125,16 @@ class BIFConfig:
     sampler_type: str = "sgld"
     seed: int = 42
     dtype: str = "bfloat16"
-
     score_col: str = "cross_corr_mean_over_queries"
-
+    pool_eval_subset: int = 0
     sweep_lr_values: list[float] = field(default_factory=lambda: [1e-4])
     sweep_gamma_values: list[float] = field(default_factory=lambda: [100.0, 1000.0])
     sweep_nbeta_values: list[float] = field(default_factory=lambda: [100.0])
+    top_k: int = 500
 
     @classmethod
     def from_yaml(cls, path: str) -> BIFConfig:
         with open(path) as f:
             d = yaml.safe_load(f) or {}
-        valid_keys = set(cls.__dataclass_fields__.keys())
-        filtered = {k: v for k, v in d.items() if k in valid_keys}
-        return cls(**filtered)
+        keys = set(cls.__dataclass_fields__.keys())
+        return cls(**{k: v for k, v in d.items() if k in keys})
