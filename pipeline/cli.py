@@ -132,14 +132,25 @@ def cmd_pipeline(args):
         train_config, bif_config, sft_output, pool_path, query_path
     )
 
+    bif_num_gpus = args.bif_num_gpus
+    bif_gpu_ids = args.bif_gpu_ids
+
     for ckpt_name, sweep_path in sweep_configs.items():
-        print(f"\n[bif] Running sweep for checkpoint: {ckpt_name}")
-        cmd = (
-            f"CUDA_VISIBLE_DEVICES={args.gpu} "
-            f"python -m bif.cli sweep-bif --config {sweep_path}"
-        )
+        print(f"\n[bif] Running sweep for checkpoint: {ckpt_name} "
+              f"({bif_num_gpus} GPU{'s' if bif_num_gpus > 1 else ''})")
+        if bif_num_gpus > 1:
+            cmd = (
+                f"CUDA_VISIBLE_DEVICES={bif_gpu_ids} "
+                f"torchrun --standalone --nnodes=1 --nproc_per_node={bif_num_gpus} "
+                f"-m bif.cli sweep-bif --config {sweep_path}"
+            )
+        else:
+            cmd = (
+                f"CUDA_VISIBLE_DEVICES={bif_gpu_ids or args.gpu} "
+                f"python -m bif.cli sweep-bif --config {sweep_path}"
+            )
         print(f"[bif] Command: {cmd}")
-        ret = os.system(cmd)
+        ret = subprocess.call(cmd, shell=True)
         if ret != 0:
             print(f"[bif] Sweep for {ckpt_name} failed (code={ret}). Skipping.")
             continue
@@ -237,8 +248,10 @@ def main():
     p_pipe = subparsers.add_parser("pipeline", help="Full pipeline: SFT -> BIF -> drop -> re-SFT")
     p_pipe.add_argument("--config", required=True)
     p_pipe.add_argument("--bif_config", default=None)
-    p_pipe.add_argument("--gpu", default="0", help="GPU id for BIF sweep (single GPU)")
+    p_pipe.add_argument("--gpu", default="0", help="GPU id for BIF sweep (single GPU, ignored if --bif_gpu_ids set)")
     p_pipe.add_argument("--num_gpus", type=int, default=1, help="GPU count for SFT training")
+    p_pipe.add_argument("--bif_num_gpus", type=int, default=1, help="GPU count for BIF sweep (1=single-GPU, >1=torchrun)")
+    p_pipe.add_argument("--bif_gpu_ids", default="", help="Comma-separated GPU IDs for BIF (e.g. '0,1,2,3'). Single GPU uses --gpu if not set")
 
     args = parser.parse_args()
     {

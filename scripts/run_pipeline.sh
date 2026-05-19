@@ -4,7 +4,8 @@ set -euo pipefail
 CONFIG=${1:-configs/sft_gsm8k.yaml}
 BIF_CONFIG=${2:-configs/bif.yaml}
 NUM_GPUS=${3:-1}
-GPU=${4:-0}
+BIF_NUM_GPUS=${4:-1}
+BIF_GPU_IDS=${5:-}
 
 echo "============================================================"
 echo "Step 1/3: Prepare datasets"
@@ -24,13 +25,13 @@ fi
 
 echo ""
 echo "============================================================"
-echo "Step 3/3: Full pipeline (BIF + drop + re-SFT)"
+echo "Step 3/3: Full pipeline (BIF ${BIF_NUM_GPUS} GPU(s), SFT ${NUM_GPUS} GPU(s))"
 echo "============================================================"
-python -m pipeline.cli pipeline \
-    --config "$CONFIG" \
-    --bif_config "$BIF_CONFIG" \
-    --gpu $GPU \
-    --num_gpus $NUM_GPUS
+PIPE_ARGS="--config $CONFIG --bif_config $BIF_CONFIG --num_gpus $NUM_GPUS --bif_num_gpus $BIF_NUM_GPUS"
+if [ -n "$BIF_GPU_IDS" ]; then
+    PIPE_ARGS="$PIPE_ARGS --bif_gpu_ids $BIF_GPU_IDS"
+fi
+python -m pipeline.cli pipeline $PIPE_ARGS
 
 echo ""
 echo "============================================================"

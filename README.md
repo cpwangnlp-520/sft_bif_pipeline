@@ -102,11 +102,14 @@ sweep_nbeta_values: [100.0]
 ### One-Click Pipeline
 
 ```bash
-# Single GPU
+# Single GPU for everything
 bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 1
 
-# Multi-GPU (8 GPUs)
-bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8 0
+# SFT 8 GPUs, BIF single GPU
+bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8 1 0
+
+# SFT 8 GPUs, BIF 4 GPUs (GPU 0,1,2,3)
+bash scripts/run_pipeline.sh configs/step10000.yaml configs/bif.yaml 8 4 0,1,2,3
 ```
 
 ### Step by Step
@@ -121,13 +124,13 @@ torchrun --nproc_per_node=8 -m pipeline.cli train --config configs/step10000.yam
 # 2. Prepare BIF pool/query data
 python -m pipeline.cli prepare-bif --config configs/step10000.yaml
 
-# 3. Full pipeline (BIF on GPU 0, SFT on 8 GPUs)
+# 3. Full pipeline — single-GPU BIF
 python -m pipeline.cli pipeline --config configs/step10000.yaml \
-    --bif_config configs/bif.yaml --gpu 0 --num_gpus 8
+    --bif_config configs/bif.yaml --num_gpus 1
 
-# 3. Full pipeline (single GPU)
+# 3. Full pipeline — multi-GPU BIF (4 GPUs, IDs 0-3)
 python -m pipeline.cli pipeline --config configs/step10000.yaml \
-    --bif_config configs/bif.yaml --gpu 0 --num_gpus 1
+    --bif_config configs/bif.yaml --bif_num_gpus 4 --bif_gpu_ids 0,1,2,3 --num_gpus 8
 
 # 4. Prepare drop datasets from BIF results
 python -m pipeline.cli prepare-drop --config configs/step10000.yaml
@@ -194,7 +197,7 @@ runs/{experiment_name}/
 
 ## Important Notes
 
-- **BIF runs on single GPU** (not torchrun). Each checkpoint gets its own sweep config.
+- **BIF sweep supports single-GPU and multi-GPU**. `--bif_num_gpus 1` uses `python -m` (default); `--bif_num_gpus N` uses `torchrun` to parallelize sweep grid points across N GPUs. Use `--bif_gpu_ids` to specify which GPUs (e.g. `0,1,2,3`).
 - **SFT supports single-GPU (`python -m`) and multi-GPU (`torchrun`)**. The `pipeline` command uses `--num_gpus` to control this.
 - **Don't change batch size** between experiments — steps must be comparable.
 - **pool_only mode**: When BIF only analyzed a subset of training data (e.g., first 1000 of 3500), use `--pool_only --pool_size 1000` so random drop samples from the same pool for fair comparison.
