@@ -10,6 +10,7 @@ sft_train() {
     local config=$1
     local train_file=$2
     local run_name=$3
+    local group=$4
 
     local model_dir
     model_dir=$(python -c "
@@ -24,11 +25,12 @@ print(c.output_dir)
     fi
 
     echo ""
-    echo "--- SFT: $run_name ---"
+    echo "--- SFT: $run_name (group=$group) ---"
     torchrun --nproc_per_node=8 -m pipeline.cli train \
         --config "$config" \
         --train_file "$train_file" \
-        --run_name "$run_name"
+        --run_name "$run_name" \
+        --swanlab_group "$group"
 }
 
 echo "============================================"
@@ -38,53 +40,53 @@ echo "============================================"
 # --- 70m: factqa + nq (coding already done) ---
 echo ""
 echo "=== 70m: factqa drop ==="
-sft_train $CONFIG_70M data/drop_factqa/gsm8k_sft_train_drop_bottom_200.jsonl 70m_factqa_drop_bottom200
-sft_train $CONFIG_70M data/drop_factqa/gsm8k_sft_train_drop_top_200.jsonl     70m_factqa_drop_top200
-sft_train $CONFIG_70M data/drop_factqa/gsm8k_sft_train_drop_random_200.jsonl  70m_factqa_drop_random200
+sft_train $CONFIG_70M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 70m_factqa_drop_bottom200  70m_factqa
+sft_train $CONFIG_70M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     70m_factqa_drop_top200     70m_factqa
+sft_train $CONFIG_70M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  70m_factqa_drop_random200  70m_factqa
 
 echo ""
 echo "=== 70m: nq drop ==="
-sft_train $CONFIG_70M data/drop_nq/gsm8k_sft_train_drop_bottom_200.jsonl 70m_nq_drop_bottom200
-sft_train $CONFIG_70M data/drop_nq/gsm8k_sft_train_drop_top_200.jsonl     70m_nq_drop_top200
-sft_train $CONFIG_70M data/drop_nq/gsm8k_sft_train_drop_random_200.jsonl  70m_nq_drop_random200
+sft_train $CONFIG_70M data/drop_nq_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 70m_nq_drop_bottom200  70m_nq
+sft_train $CONFIG_70M data/drop_nq_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     70m_nq_drop_top200     70m_nq
+sft_train $CONFIG_70M data/drop_nq_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  70m_nq_drop_random200  70m_nq
 
 # --- 160m: coding + factqa + nq ---
 echo ""
 echo "=== 160m: coding drop ==="
-sft_train $CONFIG_160M data/drop_coding/gsm8k_sft_train_drop_bottom_200.jsonl 160m_coding_drop_bottom200
-sft_train $CONFIG_160M data/drop_coding/gsm8k_sft_train_drop_top_200.jsonl     160m_coding_drop_top200
-sft_train $CONFIG_160M data/drop_coding/gsm8k_sft_train_drop_random_200.jsonl  160m_coding_drop_random200
+sft_train $CONFIG_160M data/drop_coding_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 160m_coding_drop_bottom200  160m_coding
+sft_train $CONFIG_160M data/drop_coding_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     160m_coding_drop_top200     160m_coding
+sft_train $CONFIG_160M data/drop_coding_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  160m_coding_drop_random200  160m_coding
 
 echo ""
 echo "=== 160m: factqa drop ==="
-sft_train $CONFIG_160M data/drop_factqa/gsm8k_sft_train_drop_bottom_200.jsonl 160m_factqa_drop_bottom200
-sft_train $CONFIG_160M data/drop_factqa/gsm8k_sft_train_drop_top_200.jsonl     160m_factqa_drop_top200
-sft_train $CONFIG_160M data/drop_factqa/gsm8k_sft_train_drop_random_200.jsonl  160m_factqa_drop_random200
+sft_train $CONFIG_160M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 160m_factqa_drop_bottom200  160m_factqa
+sft_train $CONFIG_160M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     160m_factqa_drop_top200     160m_factqa
+sft_train $CONFIG_160M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  160m_factqa_drop_random200  160m_factqa
 
 echo ""
 echo "=== 160m: nq drop ==="
-sft_train $CONFIG_160M data/drop_nq/gsm8k_sft_train_drop_bottom_200.jsonl 160m_nq_drop_bottom200
-sft_train $CONFIG_160M data/drop_nq/gsm8k_sft_train_drop_top_200.jsonl     160m_nq_drop_top200
-sft_train $CONFIG_160M data/drop_nq/gsm8k_sft_train_drop_random_200.jsonl  160m_nq_drop_random200
+sft_train $CONFIG_160M data/drop_nq_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 160m_nq_drop_bottom200  160m_nq
+sft_train $CONFIG_160M data/drop_nq_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     160m_nq_drop_top200     160m_nq
+sft_train $CONFIG_160M data/drop_nq_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  160m_nq_drop_random200  160m_nq
 
 # --- 410m: coding + factqa + nq ---
 echo ""
 echo "=== 410m: coding drop ==="
-sft_train $CONFIG_410M data/drop_coding/gsm8k_sft_train_drop_bottom_200.jsonl 410m_coding_drop_bottom200
-sft_train $CONFIG_410M data/drop_coding/gsm8k_sft_train_drop_top_200.jsonl     410m_coding_drop_top200
-sft_train $CONFIG_410M data/drop_coding/gsm8k_sft_train_drop_random_200.jsonl  410m_coding_drop_random200
+sft_train $CONFIG_410M data/drop_coding_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 410m_coding_drop_bottom200  410m_coding
+sft_train $CONFIG_410M data/drop_coding_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     410m_coding_drop_top200     410m_coding
+sft_train $CONFIG_410M data/drop_coding_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  410m_coding_drop_random200  410m_coding
 
 echo ""
 echo "=== 410m: factqa drop ==="
-sft_train $CONFIG_410M data/drop_factqa/gsm8k_sft_train_drop_bottom_200.jsonl 410m_factqa_drop_bottom200
-sft_train $CONFIG_410M data/drop_factqa/gsm8k_sft_train_drop_top_200.jsonl     410m_factqa_drop_top200
-sft_train $CONFIG_410M data/drop_factqa/gsm8k_sft_train_drop_random_200.jsonl  410m_factqa_drop_random200
+sft_train $CONFIG_410M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 410m_factqa_drop_bottom200  410m_factqa
+sft_train $CONFIG_410M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     410m_factqa_drop_top200     410m_factqa
+sft_train $CONFIG_410M data/drop_factqa_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  410m_factqa_drop_random200  410m_factqa
 
 echo ""
 echo "=== 410m: nq drop ==="
-sft_train $CONFIG_410M data/drop_nq/gsm8k_sft_train_drop_bottom_200.jsonl 410m_nq_drop_bottom200
-sft_train $CONFIG_410M data/drop_nq/gsm8k_sft_train_drop_top_200.jsonl     410m_nq_drop_top200
-sft_train $CONFIG_410M data/drop_nq/gsm8k_sft_train_drop_random_200.jsonl  410m_nq_drop_random200
+sft_train $CONFIG_410M data/drop_nq_1k/gsm8k_sft_train_1k_drop_bottom_200.jsonl 410m_nq_drop_bottom200  410m_nq
+sft_train $CONFIG_410M data/drop_nq_1k/gsm8k_sft_train_1k_drop_top_200.jsonl     410m_nq_drop_top200     410m_nq
+sft_train $CONFIG_410M data/drop_nq_1k/gsm8k_sft_train_1k_drop_random_200.jsonl  410m_nq_drop_random200  410m_nq
 
 echo ""
 echo "============================================"

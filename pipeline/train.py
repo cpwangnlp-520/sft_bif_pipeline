@@ -27,6 +27,7 @@ def run_sft(
     config: TrainConfig,
     train_file_override: Optional[str] = None,
     run_name_override: Optional[str] = None,
+    swanlab_group_override: Optional[str] = None,
 ) -> str:
     train_file = train_file_override or config.train_file
     run_name = run_name_override or f"{config.experiment_name or config.auto_name}_sft_full"
@@ -67,6 +68,8 @@ def run_sft(
         )
         if config.swanlab_group:
             swanlab_kwargs["group"] = config.swanlab_group
+        if swanlab_group_override:
+            swanlab_kwargs["group"] = swanlab_group_override
         swanlab_cb = SwanLabCallback(**swanlab_kwargs)
         callbacks.append(swanlab_cb)
 

@@ -38,6 +38,8 @@ def cmd_train(args):
         overrides["train_file_override"] = args.train_file
     if args.run_name:
         overrides["run_name_override"] = args.run_name
+    if args.swanlab_group:
+        overrides["swanlab_group_override"] = args.swanlab_group
     run_sft(config, **overrides)
 
 
@@ -228,6 +230,7 @@ def main():
     p_train.add_argument("--config", required=True)
     p_train.add_argument("--train_file", default=None)
     p_train.add_argument("--run_name", default=None)
+    p_train.add_argument("--swanlab_group", default=None, help="Override swanlab group for this run")
 
     p_prep = subparsers.add_parser("prepare-bif", help="Convert SFT data to BIF pool/query format")
     p_prep.add_argument("--config", required=True)
