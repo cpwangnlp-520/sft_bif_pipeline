@@ -1,0 +1,36 @@
+model_name_or_path: /workspace/pku_percy/models/pythia-410m-step10000
+
+num_train_epochs: 10
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 5.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+save_steps: 50
+logging_steps: 5
+eval_steps: 10
+seed: 42
+gradient_checkpointing: false
+
+train_file: data/gsm8k_sft_train.jsonl
+eval_files:
+  gsm8k: data/gsm8k_val.jsonl
+  nq: data/nq_eval.jsonl
+  factqa: data/factqa_eval.jsonl
+  coding: data/coding_eval.jsonl
+cutoff_len: 2048
+preprocessing_num_workers: 4
+
+output_root: runs
+
+use_swanlab: true
+swanlab_project: sft-bif-pipeline
+
+bif_checkpoints: [final_model]
+bif_query_exclude: []
+
+drop:
+  strategies: [bottom, top, random]
+  k: 500
+  pool_only: false
