@@ -141,11 +141,138 @@ def prepare_factqa(output_dir: str = "data", num_eval: int = 500, seed: int = 42
     print(f"factqa (TruthfulQA): {len(items)} eval (from {len(ds)} total, seed={seed})")
 
 
+def prepare_hotpotqa(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "hotpotqa_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
+    from datasets import load_dataset
+
+    ds = load_dataset("hotpot_qa", "fullwiki", split="validation")
+    items = list(ds)
+
+    rng = random.Random(seed)
+    rng.shuffle(items)
+    items = items[:num_eval]
+
+    with open(eval_path, "w", encoding="utf-8") as f:
+        for item in items:
+            question = item["question"]
+            answer = item["answer"]
+            supporting = item.get("supporting_facts", {}).get("title", [])
+            titles = item.get("context", {}).get("title", [])
+
+            context_parts = []
+            for i, title in enumerate(titles):
+                if title in supporting:
+                    sentences = item["context"]["sentences"][i]
+                    context_parts.append(f"[{title}] {' '.join(sentences)}")
+            context = "\n".join(context_parts) if context_parts else ""
+
+            user_content = f"{context}\n\n{question}" if context else question
+            messages = [
+                {"role": "user", "content": user_content.strip()},
+                {"role": "assistant", "content": answer},
+            ]
+            f.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
+
+    print(f"hotpotqa (HotpotQA): {len(items)} eval (from {len(ds)} total, seed={seed})")
+
+
+def prepare_math(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "math_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
+    from datasets import load_dataset
+
+    ds = load_dataset("HuggingFaceH4/MATH-500", split="test")
+    items = list(ds)
+
+    with open(eval_path, "w", encoding="utf-8") as f:
+        for item in items:
+            question = item["problem"]
+            answer = item["solution"]
+            messages = [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": answer},
+            ]
+            f.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
+
+    print(f"math (MATH-500): {len(items)} eval (seed={seed})")
+
+
+def prepare_bfcl(output_dir: str = "data", num_eval: int = 500, seed: int = 42) -> None:
+    eval_path = os.path.join(output_dir, "toolbench_eval.jsonl")
+    if _skip_if_exists(eval_path):
+        return
+
+    from datasets import load_dataset
+
+    ds = load_dataset("tuandunghcmut/toolbench-v1", split="validation")
+    items = list(ds)
+
+    rng = random.Random(seed)
+    rng.shuffle(items)
+    items = items[:num_eval]
+
+    with open(eval_path, "w", encoding="utf-8") as f:
+        for item in items:
+            conversations = item.get("conversations", {})
+            from_list = conversations.get("from", [])
+            value_list = conversations.get("value", [])
+            if not from_list or not value_list:
+                continue
+            messages = []
+            for role_key, content in zip(from_list, value_list):
+                if role_key in ("system",):
+                    continue
+                role = "user" if role_key in ("human", "user") else "assistant"
+                messages.append({"role": role, "content": content})
+            if len(messages) >= 2:
+                f.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
+
+    print(f"toolbench (ToolBench-v1): {len(items)} eval (from {len(ds)} total, seed={seed})")
+
+
+def prepare_nq_train(output_dir: str = "data", num_train: int = 3500, seed: int = 42) -> None:
+    train_path = os.path.join(output_dir, "nq_sft_train.jsonl")
+    if _skip_if_exists(train_path):
+        return
+
+    from datasets import load_dataset
+
+    ds = load_dataset("google-research-datasets/nq_open", split="train")
+    all_items = list(ds)
+
+    rng = random.Random(seed)
+    rng.shuffle(all_items)
+    train_items = all_items[:num_train]
+
+    with open(train_path, "w", encoding="utf-8") as f:
+        for idx, item in enumerate(train_items):
+            answers = item["answer"]
+            if isinstance(answers, str):
+                try:
+                    answers = eval(answers)
+                except Exception:
+                    answers = [answers]
+            answer = answers[0] if answers else "unknown"
+
+            messages = [
+                {"role": "user", "content": item["question"]},
+                {"role": "assistant", "content": answer},
+            ]
+            f.write(json.dumps({"id": str(idx), "messages": messages}, ensure_ascii=False) + "\n")
+
+    print(f"nq_train (NQ): {len(train_items)} train (from {len(ds)} total, seed={seed})")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Prepare SFT training and eval datasets")
     parser.add_argument("--output_dir", type=str, default="data")
     parser.add_argument("--dataset", type=str, default="all",
-                        choices=["all", "gsm8k", "nq", "coding", "factqa"])
+                        choices=["all", "gsm8k", "nq", "coding", "factqa", "hotpotqa", "math", "toolbench", "nq_train"])
     parser.add_argument("--num_train", type=int, default=3500, help="GSM8K train samples")
     parser.add_argument("--num_val", type=int, default=500, help="GSM8K val samples")
     parser.add_argument("--num_eval", type=int, default=500, help="Eval samples per domain")
@@ -159,6 +286,10 @@ def main():
         "nq": lambda: prepare_nq(args.output_dir, args.num_eval, args.seed),
         "coding": lambda: prepare_coding(args.output_dir, args.num_eval, args.seed),
         "factqa": lambda: prepare_factqa(args.output_dir, args.num_eval, args.seed),
+        "hotpotqa": lambda: prepare_hotpotqa(args.output_dir, args.num_eval, args.seed),
+        "math": lambda: prepare_math(args.output_dir, args.num_eval, args.seed),
+        "toolbench": lambda: prepare_bfcl(args.output_dir, args.num_eval, args.seed),
+        "nq_train": lambda: prepare_nq_train(args.output_dir, args.num_train, args.seed),
     }
 
     if args.dataset == "all":
