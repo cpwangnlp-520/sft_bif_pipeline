@@ -1,0 +1,27 @@
+model_name_or_path: Qwen/Qwen2.5-0.5B
+
+num_train_epochs: 3
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+save_steps: 100
+logging_steps: 10
+eval_steps: 50
+seed: 42
+gradient_checkpointing: false
+
+train_file: data/train.jsonl
+eval_files:
+  val: data/val.jsonl
+cutoff_len: 2048
+preprocessing_num_workers: 4
+
+experiment_name: my_sft_experiment
+output_root: runs
+
+use_swanlab: true
+swanlab_project: My-SFT-Project
+swanlab_group: my_experiment_group

@@ -65,29 +65,24 @@ def sft_to_bif_pool(train_path: str, output_path: str, source: str = "sft") -> s
             record_id = record.get("id", str(i))
             messages = record.get("messages", [])
 
-            text_parts = []
-            for msg in messages:
-                role = msg["role"]
-                content = msg["content"]
-                if role == "user":
-                    text_parts.append(f"### User:\n{content}\n")
-                elif role == "assistant":
-                    text_parts.append(f"### Assistant:\n{content}\n")
-
-            text = "\n".join(text_parts)
-            answer_start = -1
-            for msg in messages:
-                if msg["role"] == "assistant":
-                    answer_start = text.find(msg["content"])
-                    break
-
             bif_record = {
                 "id": record_id,
                 "source": record.get("source", source),
-                "text": text,
             }
-            if answer_start >= 0:
-                bif_record["answer_start_char"] = answer_start
+
+            if messages:
+                bif_record["messages"] = messages
+                text_parts = []
+                for msg in messages:
+                    role = msg["role"]
+                    content = msg["content"]
+                    if role == "user":
+                        text_parts.append(f"### User:\n{content}\n")
+                    elif role == "assistant":
+                        text_parts.append(f"### Assistant:\n{content}\n")
+                bif_record["text"] = "\n".join(text_parts)
+            else:
+                bif_record["text"] = record.get("text", "")
 
             f.write(json.dumps(bif_record, ensure_ascii=False) + "\n")
 
@@ -105,27 +100,24 @@ def sft_to_bif_query(eval_path: str, output_path: str, source: str = "query") ->
             record = json.loads(line)
             messages = record.get("messages", [])
 
-            text_parts = []
-            answer = ""
-            for msg in messages:
-                role = msg["role"]
-                content = msg["content"]
-                if role == "user":
-                    text_parts.append(f"### User:\n{content}\n")
-                elif role == "assistant":
-                    answer = content
-                    text_parts.append(f"### Assistant:\n{content}\n")
-
-            text = "\n".join(text_parts)
-            answer_start = text.find(answer) if answer else -1
-
             bif_record = {
                 "id": record.get("id", f"query_{i}"),
                 "source": record.get("source", source),
-                "text": text,
             }
-            if answer_start >= 0:
-                bif_record["answer_start_char"] = answer_start
+
+            if messages:
+                bif_record["messages"] = messages
+                text_parts = []
+                for msg in messages:
+                    role = msg["role"]
+                    content = msg["content"]
+                    if role == "user":
+                        text_parts.append(f"### User:\n{content}\n")
+                    elif role == "assistant":
+                        text_parts.append(f"### Assistant:\n{content}\n")
+                bif_record["text"] = "\n".join(text_parts)
+            else:
+                bif_record["text"] = record.get("text", "")
 
             f.write(json.dumps(bif_record, ensure_ascii=False) + "\n")
 

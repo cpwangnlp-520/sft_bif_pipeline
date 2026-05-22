@@ -1,0 +1,26 @@
+model_name_or_path: /workspace/pku_percy/models/Qwen2.5-0.5B-base
+
+num_train_epochs: 3
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+save_steps: 100
+logging_steps: 5
+eval_steps: 50
+seed: 42
+gradient_checkpointing: false
+
+train_file: data/dolly_sft_train.jsonl
+eval_files:
+  dolly: data/dolly_eval_50.jsonl
+cutoff_len: 2048
+preprocessing_num_workers: 4
+
+output_root: runs
+
+use_swanlab: true
+swanlab_project: Qwen2.5-Preliminary-test
+swanlab_group: qwen_base_sft

@@ -40,6 +40,10 @@ def cmd_train(args):
         overrides["run_name_override"] = args.run_name
     if args.swanlab_group:
         overrides["swanlab_group_override"] = args.swanlab_group
+    if args.batch_size:
+        config.per_device_train_batch_size = args.batch_size
+    if args.grad_accum:
+        config.gradient_accumulation_steps = args.grad_accum
     run_sft(config, **overrides)
 
 
@@ -231,6 +235,8 @@ def main():
     p_train.add_argument("--train_file", default=None)
     p_train.add_argument("--run_name", default=None)
     p_train.add_argument("--swanlab_group", default=None, help="Override swanlab group for this run")
+    p_train.add_argument("--batch_size", type=int, default=None, help="Override per_device_train_batch_size")
+    p_train.add_argument("--grad_accum", type=int, default=None, help="Override gradient_accumulation_steps")
 
     p_prep = subparsers.add_parser("prepare-bif", help="Convert SFT data to BIF pool/query format")
     p_prep.add_argument("--config", required=True)

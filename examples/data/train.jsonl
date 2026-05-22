@@ -1,0 +1,3 @@
+{"id": "0", "messages": [{"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "The capital of France is Paris."}]}
+{"id": "1", "messages": [{"role": "user", "content": "Write a haiku about cats."}, {"role": "assistant", "content": "Soft paws on the floor,\nWhiskers twitch in morning light,\nPurring by the door."}]}
+{"id": "2", "messages": [{"role": "user", "content": "Explain gravity in simple terms."}, {"role": "assistant", "content": "Gravity is the invisible force that pulls objects toward each other. The bigger an object is, the stronger its pull. That's why the Earth pulls you down - it's much bigger than you! It's also why the Moon orbits the Earth instead of floating away."}]}

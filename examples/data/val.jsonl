@@ -1,0 +1,2 @@
+{"id": "eval_0", "messages": [{"role": "user", "content": "What color is the sky on a clear day?"}, {"role": "assistant", "content": "The sky is blue on a clear day."}]}
+{"id": "eval_1", "messages": [{"role": "user", "content": "How many legs does a dog have?"}, {"role": "assistant", "content": "A dog has four legs."}]}
