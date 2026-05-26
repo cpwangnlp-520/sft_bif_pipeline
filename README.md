@@ -253,3 +253,22 @@ runs/{experiment_name}/
 - **Don't change batch size** between experiments — steps must be comparable.
 - **pool_only mode**: When BIF only analyzed a subset of training data (e.g., first 1000 of 3500), use `--pool_only --pool_size 1000` so random drop samples from the same pool for fair comparison.
 - **SwanLab group**: Use `swanlab_group` to group related experiments (e.g., all drop-200 variants) in the same chart.
+
+## Refusal Trajectory Evaluation
+
+After SFT training, evaluate how refusal behavior evolves across checkpoints:
+
+```bash
+# All-in-one: infer -> judge -> analyze
+python examples/eval_example.py \
+    --base_model runs/my_exp/base_model \
+    --checkpoints runs/my_exp/checkpoint-30 runs/my_exp/checkpoint-60 \
+    --eval_data data/xstest_eval.jsonl \
+    --gpu_ids 0 1 \
+    --api_key $DEEPSEEK_API_KEY \
+    --experiment_name my_exp_eval
+```
+
+**How it works**: Phase 1 deploys vLLM on each checkpoint (parallel across GPUs), Phase 2 classifies responses as refusal/non-refusal (regex first, API fallback), Phase 3 computes refusal rates and plots curves.
+
+See [examples/eval_example.md](examples/eval_example.md) for full documentation.
