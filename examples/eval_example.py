@@ -3,23 +3,47 @@
 Refusal Trajectory Evaluation Pipeline
 
 A 3-phase pipeline to evaluate how SFT training progresses in terms of refusal behavior:
-  Phase 1: vLLM inference on base model + all checkpoints
-  Phase 2: Refusal judgment (regex first, then API for remaining)
+  Phase 1: vLLM inference — connect to running vLLM servers, infer each checkpoint
+  Phase 2: Refusal judgment — regex first, then API for remaining
   Phase 3: Analyze results + (optional) upload to SwanLab
 
+Prerequisites for Phase 1:
+  You need to start vLLM servers yourself before running Phase 1.
+  The script connects to already-running vLLM API servers.
+
+  Example — start vLLM on GPU 0, port 8000:
+    CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \\
+        --model runs/my_exp/checkpoint-30 \\
+        --port 8000 --dtype bfloat16 --max-model-len 2048 \\
+        --gpu-memory-utilization 0.3 --enforce-eager --trust-remote-code
+
+  For small models, --gpu-memory-utilization 0.3 and --enforce-eager save time.
+  The script will infer one checkpoint at a time against the running server,
+  then you switch to the next model and re-run.
+
 Usage:
-  # Run all phases
-  python examples/eval_example.py --base_model runs/my_exp/base_model \
-      --checkpoints runs/my_exp/ckpt-30 runs/my_exp/ckpt-60 runs/my_exp/ckpt-90 \
-      --eval_data data/xstest_150.jsonl --gpu_ids 0 1 2 3
+  # Phase 1: infer one checkpoint against running vLLM server
+  python examples/eval_example.py --phase 1 \\
+      --vllm_url http://localhost:8000 \\
+      --checkpoint_name checkpoint-30 \\
+      --eval_data data/xstest_150.jsonl
 
-  # Run single phase
-  python examples/eval_example.py --phase 1 ...
-  python examples/eval_example.py --phase 2 ...
-  python examples/eval_example.py --phase 3 ...
+  # Phase 1: infer base model
+  python examples/eval_example.py --phase 1 \\
+      --vllm_url http://localhost:8000 \\
+      --checkpoint_name epoch_0_base \\
+      --eval_data data/xstest_150.jsonl
 
-  # With SwanLab upload
-  python examples/eval_example.py --phase 3 --swanlab_project my-project --experiment_name my_exp
+  # Phase 2: judge all inference results
+  python examples/eval_example.py --phase 2 \\
+      --eval_data data/xstest_150.jsonl \\
+      --api_key $DEEPSEEK_API_KEY
+
+  # Phase 3: analyze + upload
+  python examples/eval_example.py --phase 3 \\
+      --eval_data data/xstest_150.jsonl \\
+      --experiment_name my_exp \\
+      --swanlab_project my-project
 """
 from __future__ import annotations
 
@@ -28,8 +52,6 @@ import asyncio
 import json
 import os
 import re
-import signal
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -66,8 +88,6 @@ JUDGE_SYSTEM_PROMPT = (
     "Return JSON only."
 )
 
-BASE_PORT = 9000
-VLLM_TIMEOUT = 300
 DEEPSEEK_CONCURRENCY = 16
 DEEPSEEK_TIMEOUT = 60
 DEEPSEEK_MAX_RETRIES = 3
@@ -87,60 +107,50 @@ def is_valid_jsonl(fpath: Path) -> bool:
         return "[ERROR]" not in rec.get("response", "")
 
 
-def wait_for_server(port: int, timeout: int = VLLM_TIMEOUT) -> bool:
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        try:
-            r = requests.get(f"http://localhost:{port}/v1/models", timeout=5)
-            if r.status_code == 200:
-                return True
-        except Exception:
-            pass
-        time.sleep(3)
-    return False
-
-
-def kill_port(port: int):
-    try:
-        result = subprocess.run(f"lsof -ti:{port}", shell=True, capture_output=True, text=True)
-        for pid in result.stdout.strip().split("\n"):
-            if pid.strip():
-                os.kill(int(pid.strip()), signal.SIGKILL)
-    except Exception:
-        pass
-
-
 # ============================================================
 # Phase 1: vLLM Inference
 # ============================================================
-def deploy_vllm(model_path: str, port: int, gpu_id: int) -> subprocess.Popen:
-    cmd = [
-        sys.executable, "-m", "vllm.entrypoints.openai.api_server",
-        "--model", model_path,
-        "--port", str(port),
-        "--dtype", "bfloat16",
-        "--max-model-len", "2048",
-        "--gpu-memory-utilization", "0.3",
-        "--enforce-eager",
-        "--trust-remote-code",
-    ]
-    log_path = output_dir / f"vllm_gpu{gpu_id}_port{port}.log"
-    f = open(log_path, "w")
-    env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-    return subprocess.Popen(cmd, env=env, stdout=f, stderr=f)
+def phase1_inference(vllm_url: str, checkpoint_name: str, eval_data: str):
+    print("=" * 60)
+    print("Phase 1: vLLM Inference")
+    print(f"  vLLM server: {vllm_url}")
+    print(f"  Checkpoint:  {checkpoint_name}")
+    print("=" * 60)
 
+    raw_dir = output_dir / "inference_raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    out_path = raw_dir / f"{checkpoint_name}.jsonl"
 
-def infer_one(records: list[dict], port: int, ckpt_name: str) -> list[dict]:
-    base_url = f"http://localhost:{port}/v1"
+    if is_valid_jsonl(out_path):
+        print(f"  SKIP {checkpoint_name} (already exists at {out_path})")
+        return
+
+    # Check server is alive
     try:
-        resp = requests.get(f"{base_url}/models", timeout=10)
-        model_name = resp.json()["data"][0]["id"]
-    except Exception:
-        model_name = ckpt_name
+        r = requests.get(f"{vllm_url}/v1/models", timeout=10)
+        r.raise_for_status()
+        model_name = r.json()["data"][0]["id"]
+        print(f"  Connected to vLLM, model: {model_name}")
+    except Exception as e:
+        print(f"  ERROR: Cannot connect to vLLM at {vllm_url}: {e}")
+        print(f"  Make sure vLLM is running, e.g.:")
+        print(f"    CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \\")
+        print(f"      --model /path/to/{checkpoint_name} --port {vllm_url.split(':')[-1]} \\")
+        print(f"      --dtype bfloat16 --max-model-len 2048 --enforce-eager")
+        sys.exit(1)
 
+    # Load eval data
+    records = []
+    with open(eval_data, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                records.append(json.loads(line))
+    print(f"  {len(records)} eval samples loaded")
+
+    # Infer
+    base_url = f"{vllm_url}/v1"
     results = []
-    for rec in tqdm(records, desc=f"  {ckpt_name}", leave=False):
+    for rec in tqdm(records, desc=f"  {checkpoint_name}"):
         prompt = rec.get("prompt", "")
         payload = {
             "model": model_name,
@@ -162,93 +172,17 @@ def infer_one(records: list[dict], port: int, ckpt_name: str) -> list[dict]:
 
         out = dict(rec)
         out["response"] = response_text
-        out["checkpoint"] = ckpt_name
+        out["checkpoint"] = checkpoint_name
         results.append(out)
-    return results
 
+    with open(out_path, "w", encoding="utf-8") as f:
+        for r in results:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    print(f"  Saved {len(results)} -> {out_path}")
 
-def phase1_inference(base_model: str, checkpoints: list[str],
-                     eval_data: str, gpu_ids: list[int]):
-    print("=" * 60)
-    print("Phase 1: vLLM Inference")
-    print("=" * 60)
-
-    records = []
-    with open(eval_data, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-    print(f"  {len(records)} eval samples loaded")
-
-    raw_dir = output_dir / "inference_raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-
-    # Build todo list: (model_path, output_path, ckpt_name)
-    todo = []
-
-    # Base model
-    base_out = raw_dir / "epoch_0_base.jsonl"
-    if not is_valid_jsonl(base_out):
-        todo.append((base_model, base_out, "epoch_0_base"))
-    else:
-        print("  SKIP base model (already exists)")
-
-    # Checkpoints
-    for ckpt_path in checkpoints:
-        ckpt_name = Path(ckpt_path).name
-        out_path = raw_dir / f"{ckpt_name}.jsonl"
-        if is_valid_jsonl(out_path):
-            print(f"  SKIP {ckpt_name} (already exists)")
-            continue
-        if not Path(ckpt_path).exists():
-            print(f"  SKIP {ckpt_name} (model not found at {ckpt_path})")
-            continue
-        todo.append((ckpt_path, out_path, ckpt_name))
-
-    print(f"  {len(todo)} inference jobs to run")
-
-    if not todo:
-        print("  All inference already done!")
-        return
-
-    # Run in batches of n_gpus
-    n_gpus = len(gpu_ids)
-    for batch_start in range(0, len(todo), n_gpus):
-        batch = todo[batch_start:batch_start + n_gpus]
-        procs = []
-        for i, (model_path, _, ckpt_name) in enumerate(batch):
-            port = BASE_PORT + i
-            gpu = gpu_ids[i]
-            print(f"  Deploying {ckpt_name} on GPU {gpu} port {port}...")
-            proc = deploy_vllm(model_path, port, gpu)
-            procs.append((proc, port, gpu))
-
-        print("  Waiting for vLLM servers...")
-        for proc, port, gpu in procs:
-            ok = wait_for_server(port)
-            if not ok:
-                print(f"  FAILED: server on port {port} did not start")
-
-        for i, (_, out_path, ckpt_name) in enumerate(batch):
-            port = BASE_PORT + i
-            results = infer_one(records, port, ckpt_name)
-            with open(out_path, "w", encoding="utf-8") as f:
-                for r in results:
-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
-            print(f"  Saved {len(results)} -> {out_path.name}")
-
-        for proc, port, gpu in procs:
-            try:
-                proc.terminate()
-                proc.wait(timeout=15)
-            except Exception:
-                try:
-                    proc.kill()
-                    proc.wait(timeout=5)
-                except Exception:
-                    pass
-            kill_port(port)
-        time.sleep(3)
+    n_errors = sum(1 for r in results if "[ERROR]" in r.get("response", ""))
+    if n_errors > 0:
+        print(f"  WARNING: {n_errors} responses had errors")
 
     print("Phase 1 complete!")
 
@@ -341,6 +275,9 @@ async def phase2_judge(api_key: str, api_url: str, api_model: str):
     judged_dir.mkdir(parents=True, exist_ok=True)
 
     ckpt_files = sorted(raw_dir.glob("*.jsonl"))
+    if not ckpt_files:
+        print("  No inference results found! Run Phase 1 first.")
+        return
 
     async with aiohttp.ClientSession() as session:
         sem = asyncio.Semaphore(DEEPSEEK_CONCURRENCY)
@@ -354,7 +291,7 @@ async def phase2_judge(api_key: str, api_url: str, api_model: str):
 
             errors = sum(1 for r in records if "[ERROR]" in r.get("response", ""))
             if errors > 0:
-                print(f"  SKIP {in_path.name} ({errors} ERROR responses)")
+                print(f"  SKIP {in_path.name} ({errors} ERROR responses, re-run Phase 1)")
                 continue
 
             regex_count = sum(1 for r in records if regex_is_refusal(r["response"])[0])
@@ -413,7 +350,7 @@ def phase3_analyze(experiment_name: str, swanlab_project: Optional[str] = None):
             })
 
     if not rows:
-        print("  No judged data found!")
+        print("  No judged data found! Run Phase 2 first.")
         return
 
     df = pd.DataFrame(rows)
@@ -448,9 +385,7 @@ def phase3_analyze(experiment_name: str, swanlab_project: Optional[str] = None):
         run = swanlab.init(
             project=swanlab_project,
             experiment_name=experiment_name,
-            config={"base_model": args.base_model,
-                    "checkpoints": [str(p) for p in args.checkpoints],
-                    "eval_data": str(args.eval_data)},
+            config={"experiment_name": experiment_name},
         )
         for _, row in df.iterrows():
             step = row["checkpoint"]
@@ -476,21 +411,24 @@ def phase3_analyze(experiment_name: str, swanlab_project: Optional[str] = None):
 # ============================================================
 def parse_args():
     parser = argparse.ArgumentParser(description="Refusal Trajectory Evaluation Pipeline")
-    parser.add_argument("--base_model", required=True, help="Path to base model (before SFT)")
-    parser.add_argument("--checkpoints", nargs="+", required=True,
-                        help="Paths to SFT checkpoint directories")
-    parser.add_argument("--eval_data", required=True,
-                        help="Path to eval JSONL (must have 'prompt' and 'split' fields)")
+
+    # Common
     parser.add_argument("--output_dir", default=None,
                         help="Output directory (default: eval_outputs/<experiment_name>)")
     parser.add_argument("--experiment_name", default="eval_experiment",
-                        help="Experiment name for logging")
-    parser.add_argument("--gpu_ids", nargs="+", type=int, default=[0],
-                        help="GPU IDs for parallel vLLM inference (default: [0])")
-    parser.add_argument("--phase", type=int, default=0,
-                        help="Run only this phase (1, 2, or 3). 0 = all phases")
+                        help="Experiment name for output dir and SwanLab")
+    parser.add_argument("--phase", type=int, required=True,
+                        help="Phase to run: 1=inference, 2=judge, 3=analyze")
 
-    # Judge API config
+    # Phase 1: vLLM inference
+    parser.add_argument("--vllm_url", default="http://localhost:8000",
+                        help="vLLM API server URL (default: http://localhost:8000)")
+    parser.add_argument("--checkpoint_name", default=None,
+                        help="Checkpoint name for output file (e.g. epoch_0_base, checkpoint-30)")
+    parser.add_argument("--eval_data", default=None,
+                        help="Path to eval JSONL (must have 'prompt' field, optional 'split')")
+
+    # Phase 2: Judge API
     parser.add_argument("--api_key", default=os.environ.get("DEEPSEEK_API_KEY", ""),
                         help="API key for refusal judge (or set DEEPSEEK_API_KEY env)")
     parser.add_argument("--api_url", default="https://api.deepseek.com/chat/completions",
@@ -498,7 +436,7 @@ def parse_args():
     parser.add_argument("--api_model", default="deepseek-chat",
                         help="API model for refusal judge")
 
-    # SwanLab
+    # Phase 3: SwanLab
     parser.add_argument("--swanlab_project", default=None,
                         help="SwanLab project name (enables upload in Phase 3)")
 
@@ -510,9 +448,21 @@ if __name__ == "__main__":
     output_dir = Path(args.output_dir) if args.output_dir else Path("eval_outputs") / args.experiment_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.phase in (0, 1):
-        phase1_inference(args.base_model, args.checkpoints, args.eval_data, args.gpu_ids)
-    if args.phase in (0, 2):
+    if args.phase == 1:
+        if not args.eval_data:
+            print("  Error: --eval_data required for Phase 1")
+            sys.exit(1)
+        if not args.checkpoint_name:
+            print("  Error: --checkpoint_name required for Phase 1 (e.g. epoch_0_base, checkpoint-30)")
+            sys.exit(1)
+        phase1_inference(args.vllm_url, args.checkpoint_name, args.eval_data)
+
+    elif args.phase == 2:
         asyncio.run(phase2_judge(args.api_key, args.api_url, args.api_model))
-    if args.phase in (0, 3):
+
+    elif args.phase == 3:
         phase3_analyze(args.experiment_name, args.swanlab_project)
+
+    else:
+        print("  Error: --phase must be 1, 2, or 3")
+        sys.exit(1)

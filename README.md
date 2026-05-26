@@ -259,16 +259,25 @@ runs/{experiment_name}/
 After SFT training, evaluate how refusal behavior evolves across checkpoints:
 
 ```bash
-# All-in-one: infer -> judge -> analyze
-python examples/eval_example.py \
-    --base_model runs/my_exp/base_model \
-    --checkpoints runs/my_exp/checkpoint-30 runs/my_exp/checkpoint-60 \
-    --eval_data data/xstest_eval.jsonl \
-    --gpu_ids 0 1 \
-    --api_key $DEEPSEEK_API_KEY \
-    --experiment_name my_exp_eval
+# 1. Start vLLM with a checkpoint
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+    --model runs/my_exp/checkpoint-30 --port 8000 \
+    --dtype bfloat16 --max-model-len 2048 --enforce-eager
+
+# 2. Infer (one checkpoint at a time)
+python examples/eval_example.py --phase 1 \
+    --vllm_url http://localhost:8000 --checkpoint_name checkpoint-30 \
+    --eval_data data/xstest_eval.jsonl --experiment_name my_exp
+
+# 3. Judge all checkpoints
+python examples/eval_example.py --phase 2 \
+    --api_key $DEEPSEEK_API_KEY --experiment_name my_exp
+
+# 4. Analyze + upload
+python examples/eval_example.py --phase 3 \
+    --experiment_name my_exp --swanlab_project my-project
 ```
 
-**How it works**: Phase 1 deploys vLLM on each checkpoint (parallel across GPUs), Phase 2 classifies responses as refusal/non-refusal (regex first, API fallback), Phase 3 computes refusal rates and plots curves.
+You start vLLM yourself, the script connects to the running API server. Repeat Step 1-2 for each checkpoint.
 
 See [examples/eval_example.md](examples/eval_example.md) for full documentation.
