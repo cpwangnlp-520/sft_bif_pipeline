@@ -259,25 +259,18 @@ runs/{experiment_name}/
 After SFT training, evaluate how refusal behavior evolves across checkpoints:
 
 ```bash
-# 1. Start vLLM with a checkpoint
-CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
-    --model runs/my_exp/checkpoint-30 --port 8000 \
-    --dtype bfloat16 --max-model-len 2048 --enforce-eager
+# Auto mode: infer all checkpoints automatically (recommended)
+python examples/eval_example.py --phase 1 --mode auto \
+    --base_model runs/base_model \
+    --checkpoints runs/ckpt-30 runs/ckpt-60 runs/ckpt-90 \
+    --eval_data data/xstest_eval.jsonl \
+    --gpu_ids 0 1 2 --experiment_name my_exp
 
-# 2. Infer (one checkpoint at a time)
-python examples/eval_example.py --phase 1 \
-    --vllm_url http://localhost:8000 --checkpoint_name checkpoint-30 \
-    --eval_data data/xstest_eval.jsonl --experiment_name my_exp
-
-# 3. Judge all checkpoints
-python examples/eval_example.py --phase 2 \
-    --api_key $DEEPSEEK_API_KEY --experiment_name my_exp
-
-# 4. Analyze + upload
-python examples/eval_example.py --phase 3 \
-    --experiment_name my_exp --swanlab_project my-project
+# Judge + analyze
+python examples/eval_example.py --phase 2 --api_key $DEEPSEEK_API_KEY --experiment_name my_exp
+python examples/eval_example.py --phase 3 --experiment_name my_exp --swanlab_project my-project
 ```
 
-You start vLLM yourself, the script connects to the running API server. Repeat Step 1-2 for each checkpoint.
+Phase 1 auto mode deploys/kills vLLM per checkpoint, parallel across GPUs. Use `--mode manual` to connect to your own vLLM server.
 
 See [examples/eval_example.md](examples/eval_example.md) for full documentation.
